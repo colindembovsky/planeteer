@@ -4,11 +4,14 @@ import { render } from 'ink';
 import App from './app.js';
 import type { Screen } from './models/plan.js';
 import { listPlans } from './services/persistence.js';
+import { loadModelPreference } from './services/copilot.js';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'home';
 
 async function main(): Promise<void> {
+  await loadModelPreference();
+
   if (command === 'list') {
     const plans = await listPlans();
     if (plans.length === 0) {

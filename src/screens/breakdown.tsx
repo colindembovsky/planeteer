@@ -7,6 +7,7 @@ import { detectCycles, computeBatches } from '../utils/dependency-graph.js';
 import TaskTree from '../components/task-tree.js';
 import BatchView from '../components/batch-view.js';
 import Spinner from '../components/spinner.js';
+import StreamingText from '../components/streaming-text.js';
 import StatusBar from '../components/status-bar.js';
 import { nanoid } from 'nanoid';
 
@@ -32,12 +33,18 @@ export default function BreakdownScreen({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [attempt, setAttempt] = useState(0);
+  const [streamText, setStreamText] = useState('');
 
   useEffect(() => {
     if (existingPlan) return;
 
     setLoading(true);
-    generateWBS(scopeDescription)
+    setError(null);
+    setStreamText('');
+    generateWBS(scopeDescription, (_delta, fullText) => {
+      setStreamText(fullText);
+    })
       .then((tasks) => {
         const newPlan = createPlan({
           id: nanoid(8),
@@ -52,10 +59,14 @@ export default function BreakdownScreen({
         setError(err.message);
         setLoading(false);
       });
-  }, [scopeDescription, existingPlan]);
+  }, [scopeDescription, existingPlan, attempt]);
 
   useInput((ch, key) => {
     if (key.escape) onBack();
+    if (!plan && !loading && error && ch === 'r') {
+      setAttempt((a) => a + 1);
+      return;
+    }
     if (!plan) return;
 
     if (key.tab) {
@@ -77,9 +88,16 @@ export default function BreakdownScreen({
           <Text bold color="cyan">Work Breakdown</Text>
         </Box>
         <Box marginBottom={1}>
-          <Spinner label="Generating work breakdown" />
+          <Spinner label="Generating work breakdown" showElapsed />
         </Box>
-        <StatusBar screen="Breakdown" hint="hang tight..." />
+        {streamText ? (
+          <Box marginBottom={1} borderStyle="round" borderColor="gray" paddingX={1}>
+            <StreamingText text={streamText} maxLines={8} label="Response" />
+          </Box>
+        ) : (
+          <Text color="gray">This can take up to 2 minutes for complex projects.</Text>
+        )}
+        <StatusBar screen="Breakdown" hint="hang tight... esc: cancel" />
       </Box>
     );
   }
@@ -87,8 +105,20 @@ export default function BreakdownScreen({
   if (error) {
     return (
       <Box flexDirection="column">
-        <Text color="red">Error: {error}</Text>
-        <StatusBar screen="Breakdown" hint="esc: back" />
+        <Box marginBottom={1}>
+          <Text bold color="cyan">Work Breakdown</Text>
+        </Box>
+        <Box marginBottom={1}>
+          <Text color="red" bold>⚠ {error}</Text>
+        </Box>
+        <Box>
+          <Text color="yellow">Press </Text>
+          <Text color="green" bold>r</Text>
+          <Text color="yellow"> to retry, </Text>
+          <Text color="green" bold>esc</Text>
+          <Text color="yellow"> to go back</Text>
+        </Box>
+        <StatusBar screen="Breakdown" hint="r: retry  esc: back" />
       </Box>
     );
   }

@@ -40,7 +40,7 @@ export async function listPlans(): Promise<{ id: string; name: string; updatedAt
   const plans: { id: string; name: string; updatedAt: string }[] = [];
 
   for (const file of files) {
-    if (!file.endsWith('.json') || file === 'prompt-history.json') continue;
+    if (!file.endsWith('.json') || file === 'prompt-history.json' || file === 'settings.json') continue;
     try {
       const raw = await readFile(join(dir, file), 'utf-8');
       const plan = JSON.parse(raw) as Plan;

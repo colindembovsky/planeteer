@@ -34,6 +34,14 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
       } else {
         onBack();
       }
+      return;
+    }
+    // Number key shortcuts for menu options
+    if (!streaming && !transitioning && !customMode && menuItems.length > 0) {
+      const num = parseInt(ch, 10);
+      if (num >= 1 && num <= menuItems.length) {
+        handleOptionSelect(menuItems[num - 1]!);
+      }
     }
   });
 
@@ -121,12 +129,12 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
 
   const menuItems = clarification?.options.length
     ? [
-        ...clarification.options.map((opt) => ({
-          label: opt,
+        ...clarification.options.map((opt, i) => ({
+          label: `${i + 1}. ${opt}`,
           value: opt,
         })),
-        { label: '✎ Type a custom answer', value: '__custom__' },
-        { label: '🚀 Enough questions — let\'s plan already!', value: '__skip__' },
+        { label: `${clarification.options.length + 1}. ✎ Type a custom answer`, value: '__custom__' },
+        { label: `${clarification.options.length + 2}. 🚀 Enough questions — let's plan already!`, value: '__skip__' },
       ]
     : [];
 
@@ -138,18 +146,25 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
-        {messages.map((msg, i) => (
-          <Box key={i} marginBottom={1}>
-            <Text color={msg.role === 'user' ? 'green' : 'cyan'} bold>
-              {msg.role === 'user' ? 'You' : 'Copilot'}:{' '}
-            </Text>
-            <Text wrap="wrap">
-              {msg.role === 'assistant'
-                ? parseClarificationResponse(msg.content).question || msg.content
-                : msg.content}
-            </Text>
-          </Box>
-        ))}
+        {messages.map((msg, i) => {
+          // Skip the last assistant message if we're showing it as the clarification question below
+          const isLastAssistant =
+            msg.role === 'assistant' && i === messages.length - 1 && clarification?.question;
+          if (isLastAssistant) return null;
+          const displayText =
+            msg.role === 'assistant'
+              ? parseClarificationResponse(msg.content).question || msg.content
+              : msg.content;
+          const label = msg.role === 'user' ? 'You:' : 'Copilot:';
+          return (
+            <Box key={i} marginBottom={1} gap={1}>
+              <Text color={msg.role === 'user' ? 'green' : 'cyan'} bold>
+                {label}
+              </Text>
+              <Text wrap="wrap">{displayText}</Text>
+            </Box>
+          );
+        })}
         {streaming && (
           <Box marginBottom={1}>
             <Spinner />
@@ -163,8 +178,8 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
       </Box>
 
       {!streaming && !transitioning && clarification?.question && (
-        <Box marginBottom={1}>
-          <Text color="cyan" bold>Copilot: </Text>
+        <Box marginBottom={1} gap={1}>
+          <Text color="cyan" bold>Copilot:</Text>
           <Text wrap="wrap">{clarification.question}</Text>
         </Box>
       )}

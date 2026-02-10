@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import type { Plan } from '../models/plan.js';
 import { listPlans } from '../services/persistence.js';
-import { AVAILABLE_MODELS, getModel, setModel, getModelLabel, type ModelId } from '../services/copilot.js';
+import { fetchModels, getModel, setModel, getModelLabel, type ModelEntry } from '../services/copilot.js';
 import StatusBar from '../components/status-bar.js';
 
 interface HomeScreenProps {
@@ -16,6 +16,8 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
   const [loaded, setLoaded] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [currentModelLabel, setCurrentModelLabel] = useState(getModelLabel());
+  const [models, setModels] = useState<ModelEntry[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   React.useEffect(() => {
     listPlans().then((plans) => {
@@ -32,7 +34,7 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
     })),
   ];
 
-  const modelItems = AVAILABLE_MODELS.map((m) => ({
+  const modelItems = models.map((m) => ({
     label: `${m.id === getModel() ? '● ' : '  '}${m.label}`,
     value: m.id,
   }));
@@ -46,7 +48,7 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
   };
 
   const handleModelSelect = (item: { value: string }) => {
-    setModel(item.value as ModelId);
+    setModel(item.value);
     setCurrentModelLabel(getModelLabel());
     setShowModelPicker(false);
   };
@@ -58,6 +60,13 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
     }
     if (!showModelPicker && ch === 'm') {
       setShowModelPicker(true);
+      if (models.length === 0 && !modelsLoading) {
+        setModelsLoading(true);
+        fetchModels()
+          .then((m) => setModels(m))
+          .catch(() => {})
+          .finally(() => setModelsLoading(false));
+      }
     }
   });
 
@@ -74,7 +83,13 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
             <Text bold color="magenta">Select Model</Text>
             <Text color="gray"> — choose the AI model for planning</Text>
           </Box>
-          <SelectInput items={modelItems} onSelect={handleModelSelect} />
+          {modelsLoading ? (
+            <Text color="gray">Loading models...</Text>
+          ) : modelItems.length === 0 ? (
+            <Text color="red">No models available. Press esc to go back.</Text>
+          ) : (
+            <SelectInput items={modelItems} onSelect={handleModelSelect} />
+          )}
         </Box>
       ) : !loaded ? (
         <Text color="gray">Loading...</Text>

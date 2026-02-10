@@ -9,6 +9,7 @@ import TaskTree from '../components/task-tree.js';
 import BatchView from '../components/batch-view.js';
 import TaskEditor from '../components/task-editor.js';
 import Spinner from '../components/spinner.js';
+import StreamingText from '../components/streaming-text.js';
 import StatusBar from '../components/status-bar.js';
 
 type ViewMode = 'tree' | 'batch';
@@ -30,6 +31,9 @@ export default function RefineScreen({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [input, setInput] = useState('');
   const [refining, setRefining] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
+  const [lastRefineInput, setLastRefineInput] = useState('');
+  const [streamText, setStreamText] = useState('');
   const [saved, setSaved] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -75,6 +79,8 @@ export default function RefineScreen({
     } else if (ch === 's') {
       savePlan(currentPlan).then(() => setSaved(true));
       setTimeout(() => setSaved(false), 2000);
+    } else if (ch === 'r' && refineError) {
+      handleRetryRefine();
     }
   });
 
@@ -93,19 +99,34 @@ export default function RefineScreen({
     (value: string) => {
       if (!value.trim() || refining) return;
       setRefining(true);
+      setRefineError(null);
+      setLastRefineInput(value);
+      setStreamText('');
       setInput('');
 
-      refineWBS(currentPlan.tasks, value)
+      refineWBS(currentPlan.tasks, value, (_delta, fullText) => {
+        setStreamText(fullText);
+      })
         .then((tasks) => {
           const updated = { ...currentPlan, tasks, updatedAt: new Date().toISOString() };
           setCurrentPlan(updated);
           onPlanUpdated(updated);
           setRefining(false);
         })
-        .catch(() => setRefining(false));
+        .catch((err) => {
+          setRefineError(err.message || 'Refinement failed');
+          setRefining(false);
+        });
     },
     [currentPlan, refining, onPlanUpdated],
   );
+
+  const handleRetryRefine = useCallback(() => {
+    if (lastRefineInput) {
+      setRefineError(null);
+      handleRefine(lastRefineInput);
+    }
+  }, [lastRefineInput, handleRefine]);
 
   const cycles = detectCycles(currentPlan.tasks);
   const { batches } = computeBatches(currentPlan.tasks);
@@ -147,7 +168,7 @@ export default function RefineScreen({
           <Box marginTop={1}>
             <Text color="green" bold>{'refine> '}</Text>
             {refining ? (
-              <Spinner label="Applying refinement" />
+              <Spinner label="Applying refinement" showElapsed />
             ) : (
               <TextInput
                 value={input}
@@ -157,6 +178,23 @@ export default function RefineScreen({
               />
             )}
           </Box>
+
+          {refining && streamText && (
+            <Box marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
+              <StreamingText text={streamText} maxLines={6} label="Response" />
+            </Box>
+          )}
+
+          {refineError && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="red">⚠ {refineError}</Text>
+              <Box>
+                <Text color="yellow">Press </Text>
+                <Text color="green" bold>r</Text>
+                <Text color="yellow"> to retry the last refinement</Text>
+              </Box>
+            </Box>
+          )}
         </>
       )}
 

@@ -97,28 +97,51 @@ export async function streamClarification(
   return sendPrompt(CLARIFY_SYSTEM_PROMPT, messages, callbacks);
 }
 
-export async function generateWBS(scopeDescription: string): Promise<Task[]> {
+/** Extract a JSON array from a response that may contain surrounding prose. */
+function extractJsonArray(text: string): string {
+  // Strip markdown fencing
+  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  // If it already starts with '[', use it directly
+  if (cleaned.startsWith('[')) return cleaned;
+
+  // Find the first '[' and last ']' to extract the JSON array
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  if (start !== -1 && end !== -1 && end > start) {
+    return cleaned.slice(start, end + 1);
+  }
+
+  // Fallback: return as-is and let JSON.parse give a descriptive error
+  return cleaned;
+}
+
+export async function generateWBS(
+  scopeDescription: string,
+  onDelta?: (delta: string, fullText: string) => void,
+): Promise<Task[]> {
   const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
     { role: 'user', content: scopeDescription },
-  ]);
+  ], { onDelta });
 
-  const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  const tasks = JSON.parse(cleaned) as Task[];
+  const jsonStr = extractJsonArray(result);
+  const tasks = JSON.parse(jsonStr) as Task[];
   return tasks.map((t) => ({ ...t, status: 'pending' as const }));
 }
 
 export async function refineWBS(
   currentTasks: Task[],
   refinementRequest: string,
+  onDelta?: (delta: string, fullText: string) => void,
 ): Promise<Task[]> {
   const result = await sendPromptSync(REFINE_SYSTEM_PROMPT, [
     {
       role: 'user',
       content: `Current tasks:\n${JSON.stringify(currentTasks, null, 2)}\n\nRefinement request: ${refinementRequest}`,
     },
-  ]);
+  ], { onDelta });
 
-  const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  const tasks = JSON.parse(cleaned) as Task[];
+  const jsonStr = extractJsonArray(result);
+  const tasks = JSON.parse(jsonStr) as Task[];
   return tasks.map((t) => ({ ...t, status: 'pending' as const }));
 }

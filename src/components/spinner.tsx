@@ -19,11 +19,13 @@ const THINKING_VERBS = [
 interface SpinnerProps {
   label?: string;
   color?: string;
+  showElapsed?: boolean;
 }
 
-export default function Spinner({ label, color = 'yellow' }: SpinnerProps): React.ReactElement {
+export default function Spinner({ label, color = 'yellow', showElapsed = false }: SpinnerProps): React.ReactElement {
   const [frame, setFrame] = useState(0);
   const [verbIndex, setVerbIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -39,11 +41,20 @@ export default function Spinner({ label, color = 'yellow' }: SpinnerProps): Reac
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!showElapsed) return;
+    const timer = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [showElapsed]);
+
   const displayLabel = label || THINKING_VERBS[verbIndex]!;
+  const elapsedStr = showElapsed && elapsed > 0 ? ` (${elapsed}s)` : '';
 
   return (
     <Text color={color}>
-      {SPINNER_FRAMES[frame]} {displayLabel}...
+      {SPINNER_FRAMES[frame]} {displayLabel}...{elapsedStr}
     </Text>
   );
 }
