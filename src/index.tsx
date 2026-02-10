@@ -22,7 +22,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  let initialScreen: Screen = 'home';
+  let initialScreen: Screen = 'welcome';
   let initialPlanId: string | undefined;
 
   if (command === 'new') {

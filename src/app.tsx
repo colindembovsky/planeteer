@@ -3,6 +3,7 @@ import { Box, useApp, useInput } from 'ink';
 import type { Plan, ChatMessage, Screen } from './models/plan.js';
 import { loadPlan, savePlan } from './services/persistence.js';
 import { stopClient } from './services/copilot.js';
+import Welcome from './components/welcome.js';
 import HomeScreen from './screens/home.js';
 import ClarifyScreen from './screens/clarify.js';
 import BreakdownScreen from './screens/breakdown.js';
@@ -16,7 +17,7 @@ interface AppProps {
 
 export default function App({ initialScreen, initialPlanId }: AppProps): React.ReactElement {
   const { exit } = useApp();
-  const [screen, setScreen] = useState<Screen>(initialScreen || 'home');
+  const [screen, setScreen] = useState<Screen>(initialScreen || 'welcome');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [scopeDescription, setScopeDescription] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -34,6 +35,7 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
   }, [initialPlanId]);
 
   useInput((ch) => {
+    if (screen === 'welcome') return;
     if (ch === 'q') {
       stopClient().then(() => exit());
     }
@@ -78,6 +80,9 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
 
   return (
     <Box flexDirection="column" padding={1}>
+      {screen === 'welcome' && (
+        <Welcome onDone={() => setScreen('home')} />
+      )}
       {screen === 'home' && (
         <HomeScreen onNewPlan={handleNewPlan} onLoadPlan={handleLoadPlan} />
       )}

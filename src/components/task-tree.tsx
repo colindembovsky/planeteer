@@ -69,6 +69,7 @@ function renderNode(
   node: TreeNode,
   prefix: string,
   isLast: boolean,
+  isRoot: boolean,
   flatOrder: Task[],
   selectedIndex?: number,
 ): React.ReactElement[] {
@@ -78,8 +79,8 @@ function renderNode(
   const icon = STATUS_ICONS[node.task.status] || '?';
   const color = STATUS_COLORS[node.task.status] || 'white';
 
-  const connector = prefix === '' ? '' : isLast ? '└── ' : '├── ';
-  const childPrefix = prefix === '' ? '' : prefix + (isLast ? '    ' : '│   ');
+  const connector = isRoot ? '' : isLast ? '└── ' : '├── ';
+  const childPrefix = isRoot ? '' : prefix + (isLast ? '    ' : '│   ');
 
   elements.push(
     <Box key={node.task.id} flexDirection="column">
@@ -114,7 +115,7 @@ function renderNode(
   node.children.forEach((child, i) => {
     const childIsLast = i === node.children.length - 1;
     elements.push(
-      ...renderNode(child, childPrefix, childIsLast, flatOrder, selectedIndex),
+      ...renderNode(child, childPrefix, childIsLast, false, flatOrder, selectedIndex),
     );
   });
 
@@ -130,7 +131,7 @@ export default function TaskTree({ tasks, selectedIndex }: TaskTreeProps): React
         const isLast = i === roots.length - 1;
         return (
           <React.Fragment key={root.task.id}>
-            {renderNode(root, '', isLast, flatOrder, selectedIndex)}
+            {renderNode(root, '', isLast, true, flatOrder, selectedIndex)}
           </React.Fragment>
         );
       })}

@@ -1,6 +1,32 @@
 import { CopilotClient } from '@github/copilot-sdk';
 import type { ChatMessage } from '../models/plan.js';
 
+export const AVAILABLE_MODELS = [
+  { id: 'gpt-5', label: 'GPT-5' },
+  { id: 'gpt-4.1', label: 'GPT-4.1' },
+  { id: 'gpt-4o', label: 'GPT-4o' },
+  { id: 'o4-mini', label: 'o4-mini' },
+  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
+  { id: 'claude-opus-4', label: 'Claude Opus 4' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+] as const;
+
+export type ModelId = (typeof AVAILABLE_MODELS)[number]['id'];
+
+let currentModel: ModelId = 'claude-sonnet-4';
+
+export function getModel(): ModelId {
+  return currentModel;
+}
+
+export function setModel(model: ModelId): void {
+  currentModel = model;
+}
+
+export function getModelLabel(): string {
+  return AVAILABLE_MODELS.find((m) => m.id === currentModel)?.label ?? currentModel;
+}
+
 let client: CopilotClient | null = null;
 
 export async function getClient(): Promise<CopilotClient> {
@@ -40,7 +66,7 @@ export async function sendPrompt(
   let session;
   try {
     session = await copilot.createSession({
-      model: 'gpt-5',
+      model: currentModel,
       streaming: true,
     });
   } catch (err) {
