@@ -11,7 +11,7 @@ interface StatusBarProps {
 export default function StatusBar({ screen, hint, model }: StatusBarProps): React.ReactElement {
   const displayModel = model || getModelLabel();
   return (
-    <Box borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
+    <Box borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between" width="100%">
       <Box>
         <Text color="cyan" bold>{screen}</Text>
       </Box>

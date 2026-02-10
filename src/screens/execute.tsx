@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
+import type { ExecutionOptions } from '../services/executor.js';
 import { savePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
@@ -40,6 +41,7 @@ export default function ExecuteScreen({
   const [taskStreams, setTaskStreams] = useState<Record<string, string>>({});
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
   const [initStatus, setInitStatus] = useState<'pending' | 'in_progress' | 'done' | 'failed'>('pending');
+  const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -50,6 +52,29 @@ export default function ExecuteScreen({
     if (ch === 'x' && !started) {
       setStarted(true);
       setExecuting(true);
+      setRunCount((c) => c + 1);
+    }
+    // Retry failed tasks
+    if (ch === 'r' && started && !executing) {
+      const hasFailed = currentPlan.tasks.some((t) => t.status === 'failed');
+      if (hasFailed) {
+        // Reset failed tasks to pending, clear their streams
+        setCurrentPlan((p) => ({
+          ...p,
+          tasks: p.tasks.map((t) =>
+            t.status === 'failed' ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
+          ),
+        }));
+        setTaskStreams((prev) => {
+          const next = { ...prev };
+          for (const t of currentPlan.tasks) {
+            if (t.status === 'failed') delete next[t.id];
+          }
+          return next;
+        });
+        setExecuting(true);
+        setRunCount((c) => c + 1);
+      }
     }
     if (key.leftArrow) {
       setViewBatchIndex((i) => Math.max(0, i - 1));
@@ -71,7 +96,10 @@ export default function ExecuteScreen({
   });
 
   useEffect(() => {
-    if (!started || !executing) return;
+    if (!started || !executing || runCount === 0) return;
+
+    const isRetry = runCount > 1;
+    const execOptions: ExecutionOptions = { skipInit: isRetry };
 
     executePlan(currentPlan, {
       onTaskStart: (taskId) => {
@@ -125,10 +153,15 @@ export default function ExecuteScreen({
         setCurrentPlan(finalPlan);
         setExecuting(false);
         savePlan(finalPlan);
-        onDone(finalPlan);
+        // Only advance to done screen if all tasks succeeded
+        const allDone = finalPlan.tasks.every((t) => t.status === 'done');
+        if (allDone) {
+          onDone(finalPlan);
+        }
+        // Otherwise stay on execute screen — user can press 'r' to retry
       },
-    });
-  }, [started]);
+    }, execOptions);
+  }, [runCount]);
 
   const doneCount = currentPlan.tasks.filter((t) => t.status === 'done').length;
   const failedCount = currentPlan.tasks.filter((t) => t.status === 'failed').length;
@@ -306,14 +339,26 @@ export default function ExecuteScreen({
         </Box>
       )}
 
+      {/* Retry prompt when there are failures */}
+      {started && !executing && failedCount > 0 && (
+        <Box marginBottom={1}>
+          <Text color="red" bold>
+            {failedCount} task{failedCount > 1 ? 's' : ''} failed.
+          </Text>
+          <Text color="yellow"> Press r to retry failed tasks.</Text>
+        </Box>
+      )}
+
       <StatusBar
         screen="Execute"
         hint={
           executing
             ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
-            : started
-              ? '←→: switch batch  ↑↓: select task  ✓ done  esc: back'
-              : 'x: start  esc: back'
+            : started && failedCount > 0
+              ? '←→: switch batch  ↑↓: select task  r: retry failed  esc: back'
+              : started
+                ? '←→: switch batch  ↑↓: select task  ✓ done  esc: back'
+                : 'x: start  esc: back'
         }
       />
     </Box>

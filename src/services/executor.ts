@@ -62,29 +62,36 @@ ${taskSummary}
 Output a brief summary of what you created.`;
 }
 
+export interface ExecutionOptions {
+  skipInit?: boolean;
+}
+
 export async function executePlan(
   plan: Plan,
   callbacks: ExecutionCallbacks,
+  options: ExecutionOptions = {},
 ): Promise<Plan> {
   const updatedPlan = { ...plan, tasks: plan.tasks.map((t) => ({ ...t })) };
   let batchIndex = 0;
 
-  // Bootstrap: create README.md and .gitignore if needed
-  callbacks.onTaskStart(INIT_TASK_ID);
-  try {
-    const initPrompt = buildInitPrompt(updatedPlan);
-    const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
-      { role: 'user', content: initPrompt },
-    ], {
-      onDelta: (delta, fullText) => {
-        callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
-      },
-    });
-    callbacks.onTaskDone(INIT_TASK_ID, initResult);
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    callbacks.onTaskFailed(INIT_TASK_ID, errMsg);
-    // Non-fatal: continue with actual tasks even if init fails
+  // Bootstrap: create README.md and .gitignore if needed (skip on retry)
+  if (!options.skipInit) {
+    callbacks.onTaskStart(INIT_TASK_ID);
+    try {
+      const initPrompt = buildInitPrompt(updatedPlan);
+      const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+        { role: 'user', content: initPrompt },
+      ], {
+        onDelta: (delta, fullText) => {
+          callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
+        },
+      });
+      callbacks.onTaskDone(INIT_TASK_ID, initResult);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      callbacks.onTaskFailed(INIT_TASK_ID, errMsg);
+      // Non-fatal: continue with actual tasks even if init fails
+    }
   }
 
   while (true) {
