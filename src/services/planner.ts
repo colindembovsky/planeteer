@@ -83,12 +83,18 @@ Rules:
 - Tasks should be small enough for a single agent to implement
 - Dependencies must form a valid DAG (no cycles)
 - Maximize parallelism: only add dependencies that are truly required
-- Output ONLY the JSON array, no markdown fencing or explanation`;
+
+CRITICAL: Your response must be ONLY the raw JSON array starting with [ and ending with ].
+Do NOT include any text, commentary, explanation, or markdown fencing before or after the JSON.
+The very first character of your response MUST be [`;
 
 const REFINE_SYSTEM_PROMPT = `You are an expert project planner. The user has a work breakdown and wants to refine it.
 You will be given the current task list as JSON and the user's refinement request.
 Output the complete updated JSON array of tasks with the changes applied.
-Output ONLY the JSON array, no markdown fencing or explanation.`;
+
+CRITICAL: Your response must be ONLY the raw JSON array starting with [ and ending with ].
+Do NOT include any text, commentary, explanation, or markdown fencing before or after the JSON.
+The very first character of your response MUST be [`;
 
 export async function streamClarification(
   messages: ChatMessage[],
@@ -119,14 +125,33 @@ function extractJsonArray(text: string): string {
 export async function generateWBS(
   scopeDescription: string,
   onDelta?: (delta: string, fullText: string) => void,
+  maxRetries = 2,
 ): Promise<Task[]> {
-  const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
-    { role: 'user', content: scopeDescription },
-  ], { onDelta });
+  let lastError: Error | null = null;
 
-  const jsonStr = extractJsonArray(result);
-  const tasks = JSON.parse(jsonStr) as Task[];
-  return tasks.map((t) => ({ ...t, status: 'pending' as const }));
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
+        { role: 'user', content: scopeDescription },
+      ], { onDelta });
+
+      const jsonStr = extractJsonArray(result);
+      if (!jsonStr.startsWith('[')) {
+        throw new Error('Response did not contain a JSON array — retrying');
+      }
+      const tasks = JSON.parse(jsonStr) as Task[];
+      return tasks.map((t) => ({ ...t, status: 'pending' as const }));
+    } catch (err) {
+      lastError = err as Error;
+      // Only retry on JSON parse / extraction errors, not connection errors
+      if (attempt < maxRetries && (lastError.message.includes('JSON') || lastError.message.includes('Unexpected token') || lastError.message.includes('retrying'))) {
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw lastError!;
 }
 
 export async function refineWBS(

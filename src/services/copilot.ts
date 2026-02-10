@@ -151,7 +151,10 @@ export async function sendPrompt(
     .join('\n');
 
   try {
-    await session.sendAndWait({ prompt });
+    // Use send() instead of sendAndWait() — we handle idle/error/timeout
+    // ourselves via event listeners above. sendAndWait has a 60s default
+    // timeout that conflicts with our own idle-based timeout logic.
+    await session.send({ prompt });
   } catch (err) {
     if (settled) return;
     settled = true;

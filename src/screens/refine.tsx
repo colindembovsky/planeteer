@@ -37,6 +37,7 @@ export default function RefineScreen({
   const [saved, setSaved] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [commandMode, setCommandMode] = useState(false);
 
   const moveTask = useCallback(
     (direction: 'up' | 'down') => {
@@ -58,8 +59,37 @@ export default function RefineScreen({
   );
 
   useInput((ch, key) => {
-    if (key.escape) onBack();
+    if (key.escape) {
+      if (commandMode) {
+        setCommandMode(false);
+        return;
+      }
+      onBack();
+      return;
+    }
     if (refining || editingTask) return;
+
+    // Slash enters command mode
+    if (ch === '/' && !commandMode) {
+      setCommandMode(true);
+      return;
+    }
+
+    if (commandMode) {
+      setCommandMode(false);
+      if (ch === 'e') {
+        const task = currentPlan.tasks[selectedIndex];
+        if (task) setEditingTask(task);
+      } else if (ch === 'x') {
+        onExecute(currentPlan);
+      } else if (ch === 's') {
+        savePlan(currentPlan).then(() => setSaved(true));
+        setTimeout(() => setSaved(false), 2000);
+      } else if (ch === 'r' && refineError) {
+        handleRetryRefine();
+      }
+      return;
+    }
 
     if (key.tab) {
       setViewMode((v) => (v === 'tree' ? 'batch' : 'tree'));
@@ -71,16 +101,6 @@ export default function RefineScreen({
       moveTask('up');
     } else if (ch === ']') {
       moveTask('down');
-    } else if (ch === 'e') {
-      const task = currentPlan.tasks[selectedIndex];
-      if (task) setEditingTask(task);
-    } else if (ch === 'x') {
-      onExecute(currentPlan);
-    } else if (ch === 's') {
-      savePlan(currentPlan).then(() => setSaved(true));
-      setTimeout(() => setSaved(false), 2000);
-    } else if (ch === 'r' && refineError) {
-      handleRetryRefine();
     }
   });
 
@@ -190,7 +210,7 @@ export default function RefineScreen({
               <Text color="red">⚠ {refineError}</Text>
               <Box>
                 <Text color="yellow">Press </Text>
-                <Text color="green" bold>r</Text>
+                <Text color="green" bold>/r</Text>
                 <Text color="yellow"> to retry the last refinement</Text>
               </Box>
             </Box>
@@ -198,11 +218,18 @@ export default function RefineScreen({
         </>
       )}
 
+      {commandMode && (
+        <Box marginTop={1}>
+          <Text color="yellow" bold>/ </Text>
+          <Text color="gray">e: edit  s: save  x: execute  r: retry  esc: cancel</Text>
+        </Box>
+      )}
+
       {saved && <Text color="green">✓ Plan saved</Text>}
 
       <StatusBar
         screen="Refine"
-        hint="↑↓: navigate  []: reorder  e: edit  ⇥: view  ⏎: refine  s: save  x: execute  esc: back"
+        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/x/r)  esc: back"
       />
     </Box>
   );
