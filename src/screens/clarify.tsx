@@ -157,11 +157,11 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
               : msg.content;
           const label = msg.role === 'user' ? 'You:' : 'Copilot:';
           return (
-            <Box key={i} marginBottom={1} gap={1}>
-              <Text color={msg.role === 'user' ? 'green' : 'cyan'} bold>
-                {label}
+            <Box key={i} marginBottom={1}>
+              <Text wrap="wrap">
+                <Text color={msg.role === 'user' ? 'green' : 'cyan'} bold>{label} </Text>
+                {displayText}
               </Text>
-              <Text wrap="wrap">{displayText}</Text>
             </Box>
           );
         })}
@@ -178,9 +178,11 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
       </Box>
 
       {!streaming && !transitioning && clarification?.question && (
-        <Box marginBottom={1} gap={1}>
-          <Text color="cyan" bold>Copilot:</Text>
-          <Text wrap="wrap">{clarification.question}</Text>
+        <Box marginBottom={1}>
+          <Text wrap="wrap">
+            <Text color="cyan" bold>Copilot: </Text>
+            {clarification.question}
+          </Text>
         </Box>
       )}
 

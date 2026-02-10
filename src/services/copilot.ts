@@ -164,37 +164,40 @@ export async function sendPromptSync(
   messages: ChatMessage[],
   options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
 ): Promise<string> {
-  const timeoutMs = options?.timeoutMs ?? 120_000;
+  const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
 
   return new Promise((resolve, reject) => {
     let settled = false;
     let accumulated = '';
+    let lastDeltaAt = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    if (timeoutMs > 0) {
+    const startIdleTimer = () => {
+      if (timer) clearTimeout(timer);
+      if (idleTimeoutMs <= 0) return;
       timer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s — the model may be overloaded. Try again or switch to a different model.`));
+        if (settled) return;
+        settled = true;
+        if (accumulated.length > 0) {
+          // We have partial content — resolve with what we got
+          resolve(accumulated);
+        } else {
+          reject(new Error(`Request timed out after ${Math.round(idleTimeoutMs / 1000)}s of inactivity — the model may be overloaded. Try again or switch to a different model.`));
         }
-      }, timeoutMs);
-    }
+      }, idleTimeoutMs);
+    };
+
+    // Start the initial idle timer (waiting for first delta)
+    startIdleTimer();
 
     sendPrompt(systemPrompt, messages, {
       onDelta: (delta) => {
         accumulated += delta;
+        lastDeltaAt = Date.now();
         onDelta?.(delta, accumulated);
-        // Activity received — reset timeout if we have one
-        if (timer && timeoutMs > 0) {
-          clearTimeout(timer);
-          timer = setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              reject(new Error(`Request timed out after receiving partial response — the model may be overloaded. Try again or switch to a different model.`));
-            }
-          }, timeoutMs);
-        }
+        // Reset idle timer — only times out if no new deltas arrive
+        startIdleTimer();
       },
       onDone: (text) => {
         if (!settled) {
@@ -204,7 +207,15 @@ export async function sendPromptSync(
         }
       },
       onError: (err) => {
-        if (!settled) {
+        if (settled) return;
+        // If we have accumulated content and were recently streaming,
+        // treat timeout-like errors as completion with partial content
+        const recentlyActive = lastDeltaAt > 0 && (Date.now() - lastDeltaAt) < idleTimeoutMs;
+        if (accumulated.length > 0 && recentlyActive) {
+          settled = true;
+          if (timer) clearTimeout(timer);
+          resolve(accumulated);
+        } else {
           settled = true;
           if (timer) clearTimeout(timer);
           reject(err);
