@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text, Box, useStdout } from 'ink';
+import stringWidth from 'string-width';
 import { getModelLabel } from '../services/copilot.js';
 
 interface StatusBarProps {
@@ -23,7 +24,8 @@ export default function StatusBar({ screen, hint, model }: StatusBarProps): Reac
   // Left: " Screen", right: "rightText "  (each with 1-char inner padding)
   const leftText = ` ${screen}`;
   const rightWithPad = `${rightText} `;
-  const gap = Math.max(1, innerWidth - leftText.length - rightWithPad.length);
+  // Use stringWidth for accurate column measurement (handles emojis / unicode)
+  const gap = Math.max(1, innerWidth - stringWidth(leftText) - stringWidth(rightWithPad));
 
   const hRule = '─'.repeat(innerWidth);
   // Build exact content line as a single string so Ink Box layout cannot shift it

@@ -22,6 +22,7 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
   const [plan, setPlan] = useState<Plan | null>(null);
   const [scopeDescription, setScopeDescription] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [codebaseContext, setCodebaseContext] = useState('');
 
   // Load plan if initialPlanId provided
   React.useEffect(() => {
@@ -53,9 +54,28 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
     });
   }, []);
 
-  const handleScopeConfirmed = useCallback((description: string, msgs: ChatMessage[]) => {
+  const handleExecutePlan = useCallback((id: string) => {
+    loadPlan(id).then((p) => {
+      if (p) {
+        setPlan(p);
+        setScreen('execute');
+      }
+    });
+  }, []);
+
+  const handleValidatePlan = useCallback((id: string) => {
+    loadPlan(id).then((p) => {
+      if (p) {
+        setPlan(p);
+        setScreen('validate');
+      }
+    });
+  }, []);
+
+  const handleScopeConfirmed = useCallback((description: string, msgs: ChatMessage[], codeCtx: string) => {
     setScopeDescription(description);
     setMessages(msgs);
+    setCodebaseContext(codeCtx);
     setScreen('breakdown');
   }, []);
 
@@ -90,7 +110,12 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
         <Welcome onDone={() => setScreen('home')} />
       )}
       {screen === 'home' && (
-        <HomeScreen onNewPlan={handleNewPlan} onLoadPlan={handleLoadPlan} />
+        <HomeScreen
+          onNewPlan={handleNewPlan}
+          onLoadPlan={handleLoadPlan}
+          onExecutePlan={handleExecutePlan}
+          onValidatePlan={handleValidatePlan}
+        />
       )}
       {screen === 'clarify' && (
         <ClarifyScreen
@@ -103,6 +128,7 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
           scopeDescription={scopeDescription}
           messages={messages}
           existingPlan={plan || undefined}
+          codebaseContext={codebaseContext}
           onPlanReady={handlePlanReady}
           onBack={() => setScreen('clarify')}
         />
@@ -119,6 +145,7 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
       {screen === 'execute' && plan && (
         <ExecuteScreen
           plan={plan}
+          codebaseContext={codebaseContext}
           onDone={handleExecuteDone}
           onBack={() => setScreen('refine')}
         />

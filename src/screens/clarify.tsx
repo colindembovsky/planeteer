@@ -4,12 +4,13 @@ import SelectInput from 'ink-select-input';
 import type { ChatMessage } from '../models/plan.js';
 import { streamClarification, parseClarificationResponse, type ClarificationResult } from '../services/planner.js';
 import { loadHistory, addToHistory } from '../services/history.js';
+import { inspectCodebase } from '../services/inspector.js';
 import HistoryTextInput from '../components/history-text-input.js';
 import Spinner from '../components/spinner.js';
 import StatusBar from '../components/status-bar.js';
 
 interface ClarifyScreenProps {
-  onScopeConfirmed: (description: string, messages: ChatMessage[]) => void;
+  onScopeConfirmed: (description: string, messages: ChatMessage[], codebaseContext: string) => void;
   onBack: () => void;
 }
 
@@ -22,6 +23,9 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
   const [clarification, setClarification] = useState<ClarificationResult | null>(null);
   const [customMode, setCustomMode] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
+  const [codebaseContext, setCodebaseContext] = useState('');
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectDone, setInspectDone] = useState(false);
 
   useEffect(() => {
     loadHistory().then(setHistory);
@@ -65,6 +69,17 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
           const filtered = prev.filter((h) => h !== value);
           return [...filtered, value];
         });
+
+        // Kick off codebase inspection in parallel with the first clarification
+        setInspecting(true);
+        inspectCodebase().then((snapshot) => {
+          setCodebaseContext(snapshot.summary);
+          setInspecting(false);
+          setInspectDone(true);
+        }).catch(() => {
+          setInspecting(false);
+          setInspectDone(true);
+        });
       }
 
       streamClarification(updated, {
@@ -81,7 +96,7 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
           const parsed = parseClarificationResponse(fullText);
           if (parsed.scopeClear) {
             setTransitioning(true);
-            setTimeout(() => onScopeConfirmed(parsed.scopeClear!, final), 1500);
+            setTimeout(() => onScopeConfirmed(parsed.scopeClear!, final, codebaseContext), 1500);
           } else {
             setClarification(parsed);
           }
@@ -93,7 +108,7 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
           ]);
           setStreaming(false);
         },
-      }).catch((error: Error) => {
+      }, codebaseContext || undefined).catch((error: Error) => {
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: `Connection error: ${error.message}` },
@@ -101,7 +116,7 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
         setStreaming(false);
       });
     },
-    [messages, streaming, onScopeConfirmed],
+    [messages, streaming, onScopeConfirmed, codebaseContext],
   );
 
   const handleSkipQuestions = useCallback(() => {
@@ -111,8 +126,8 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
       .map((m) => m.content)
       .join('\n');
     setTransitioning(true);
-    setTimeout(() => onScopeConfirmed(userMessages, messages), 1500);
-  }, [messages, onScopeConfirmed]);
+    setTimeout(() => onScopeConfirmed(userMessages, messages, codebaseContext), 1500);
+  }, [messages, onScopeConfirmed, codebaseContext]);
 
   const handleOptionSelect = useCallback(
     (item: { value: string }) => {
@@ -144,6 +159,18 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
         <Text bold color="cyan">Clarify Intent</Text>
         <Text color="gray"> — describe your project, Copilot will ask clarifying questions</Text>
       </Box>
+
+      {inspecting && (
+        <Box marginBottom={1}>
+          <Spinner label="Inspecting existing codebase" />
+        </Box>
+      )}
+      {inspectDone && codebaseContext && (
+        <Box marginBottom={1}>
+          <Text color="green">✓ </Text>
+          <Text color="gray">Codebase detected — context will be included in planning</Text>
+        </Box>
+      )}
 
       <Box flexDirection="column" marginBottom={1}>
         {messages.map((msg, i) => {

@@ -11,7 +11,7 @@ export interface ExecutionCallbacks {
   onAllDone: (plan: Plan) => void;
 }
 
-function buildTaskPrompt(task: Task, plan: Plan): string {
+function buildTaskPrompt(task: Task, plan: Plan, codebaseContext?: string): string {
   const lines = [
     `## Task: ${task.title}`,
     '',
@@ -29,6 +29,9 @@ function buildTaskPrompt(task: Task, plan: Plan): string {
       .filter((t) => t.id !== task.id)
       .map((t) => `- ${t.id}: ${t.title} [${t.status}]`),
   ];
+  if (codebaseContext) {
+    lines.push('', codebaseContext);
+  }
   return lines.join('\n');
 }
 
@@ -64,77 +67,137 @@ Output a brief summary of what you created.`;
 
 export interface ExecutionOptions {
   skipInit?: boolean;
+  codebaseContext?: string;
 }
 
-export async function executePlan(
+/** Handle returned by executePlan to allow retrying individual tasks mid-flight. */
+export interface ExecutionHandle {
+  /** Retry a specific failed task. Safe to call while execution is still in progress. */
+  retryTask: (taskId: string) => void;
+  /** Promise that resolves when the execution run (including any in-flight retries) completes. */
+  done: Promise<Plan>;
+}
+
+export function executePlan(
   plan: Plan,
   callbacks: ExecutionCallbacks,
   options: ExecutionOptions = {},
-): Promise<Plan> {
+): ExecutionHandle {
   const updatedPlan = { ...plan, tasks: plan.tasks.map((t) => ({ ...t })) };
   let batchIndex = 0;
+  const codebaseContext = options.codebaseContext;
 
-  // Bootstrap: create README.md and .gitignore if needed (skip on retry)
-  if (!options.skipInit) {
-    callbacks.onTaskStart(INIT_TASK_ID);
+  // Track in-flight promises so we know when everything settles
+  const inFlight = new Set<Promise<void>>();
+
+  // Retry queue: tasks added here get picked up by the scheduler
+  const retryQueue: string[] = [];
+  let schedulerRunning = false;
+  let resolveAll: ((plan: Plan) => void) | null = null;
+
+  const donePromise = new Promise<Plan>((resolve) => {
+    resolveAll = resolve;
+  });
+
+  async function executeTask(task: Task): Promise<void> {
+    const taskInPlan = updatedPlan.tasks.find((t) => t.id === task.id)!;
+    taskInPlan.status = 'in_progress';
+    callbacks.onTaskStart(task.id);
+
     try {
-      const initPrompt = buildInitPrompt(updatedPlan);
-      const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
-        { role: 'user', content: initPrompt },
+      const prompt = buildTaskPrompt(task, updatedPlan, codebaseContext);
+      const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+        { role: 'user', content: prompt },
       ], {
         onDelta: (delta, fullText) => {
-          callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
+          callbacks.onTaskDelta(task.id, delta, fullText);
         },
       });
-      callbacks.onTaskDone(INIT_TASK_ID, initResult);
+      taskInPlan.status = 'done';
+      taskInPlan.agentResult = result;
+      callbacks.onTaskDone(task.id, result);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      callbacks.onTaskFailed(INIT_TASK_ID, errMsg);
-      // Non-fatal: continue with actual tasks even if init fails
+      taskInPlan.status = 'failed';
+      taskInPlan.agentResult = err instanceof Error ? err.message : String(err);
+      callbacks.onTaskFailed(task.id, taskInPlan.agentResult!);
     }
   }
 
-  while (true) {
-    const ready = getReadyTasks(updatedPlan.tasks);
-    if (ready.length === 0) {
-      const pending = updatedPlan.tasks.filter((t) => t.status === 'pending');
-      if (pending.length === 0) break;
-      // If there are pending tasks but none ready, we have a problem
-      const failed = updatedPlan.tasks.filter((t) => t.status === 'failed');
-      if (failed.length > 0) break; // deps failed
-      break;
+  /** Schedule any tasks that are ready. Continues until nothing is runnable. */
+  async function schedule(): Promise<void> {
+    if (schedulerRunning) return;
+    schedulerRunning = true;
+
+    while (true) {
+      // Process retry queue first — reset tasks to pending so getReadyTasks picks them up
+      while (retryQueue.length > 0) {
+        const taskId = retryQueue.shift()!;
+        const taskInPlan = updatedPlan.tasks.find((t) => t.id === taskId);
+        if (taskInPlan && taskInPlan.status === 'failed') {
+          taskInPlan.status = 'pending';
+          taskInPlan.agentResult = undefined;
+        }
+      }
+
+      const ready = getReadyTasks(updatedPlan.tasks);
+      if (ready.length === 0) {
+        // Nothing ready — if nothing in-flight either, we're done
+        if (inFlight.size === 0) break;
+        // Otherwise wait for at least one in-flight task to finish, then re-check
+        await Promise.race([...inFlight]);
+        continue;
+      }
+
+      // Launch all ready tasks in parallel
+      for (const task of ready) {
+        const p = executeTask(task).then(() => {
+          inFlight.delete(p);
+          callbacks.onBatchComplete(batchIndex);
+        });
+        inFlight.add(p);
+      }
+      batchIndex++;
+
+      // Wait for at least one of the just-launched tasks to finish before re-checking
+      await Promise.race([...inFlight]);
     }
 
-    // Execute batch in parallel
-    const promises = ready.map(async (task) => {
-      const taskInPlan = updatedPlan.tasks.find((t) => t.id === task.id)!;
-      taskInPlan.status = 'in_progress';
-      callbacks.onTaskStart(task.id);
+    schedulerRunning = false;
+    callbacks.onAllDone(updatedPlan);
+    resolveAll?.(updatedPlan);
+  }
 
+  // Kick off execution
+  (async () => {
+    // Bootstrap: create README.md and .gitignore if needed (skip on retry)
+    if (!options.skipInit) {
+      callbacks.onTaskStart(INIT_TASK_ID);
       try {
-        const prompt = buildTaskPrompt(task, updatedPlan);
-        const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
-          { role: 'user', content: prompt },
+        const initPrompt = buildInitPrompt(updatedPlan);
+        const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+          { role: 'user', content: initPrompt },
         ], {
           onDelta: (delta, fullText) => {
-            callbacks.onTaskDelta(task.id, delta, fullText);
+            callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
           },
         });
-        taskInPlan.status = 'done';
-        taskInPlan.agentResult = result;
-        callbacks.onTaskDone(task.id, result);
+        callbacks.onTaskDone(INIT_TASK_ID, initResult);
       } catch (err) {
-        taskInPlan.status = 'failed';
-        taskInPlan.agentResult = err instanceof Error ? err.message : String(err);
-        callbacks.onTaskFailed(task.id, taskInPlan.agentResult!);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        callbacks.onTaskFailed(INIT_TASK_ID, errMsg);
+        // Non-fatal: continue with actual tasks even if init fails
       }
-    });
+    }
 
-    await Promise.all(promises);
-    callbacks.onBatchComplete(batchIndex);
-    batchIndex++;
-  }
+    await schedule();
+  })();
 
-  callbacks.onAllDone(updatedPlan);
-  return updatedPlan;
+  return {
+    retryTask: (taskId: string) => {
+      retryQueue.push(taskId);
+      // Re-enter the scheduler if it's not already running
+      schedule();
+    },
+    done: donePromise,
+  };
 }

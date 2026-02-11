@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
-import type { ExecutionOptions } from '../services/executor.js';
+import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
 import { savePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
@@ -10,6 +10,7 @@ import StatusBar from '../components/status-bar.js';
 
 interface ExecuteScreenProps {
   plan: Plan;
+  codebaseContext?: string;
   onDone: (plan: Plan) => void;
   onBack: () => void;
 }
@@ -30,6 +31,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function ExecuteScreen({
   plan,
+  codebaseContext,
   onDone,
   onBack,
 }: ExecuteScreenProps): React.ReactElement {
@@ -42,6 +44,7 @@ export default function ExecuteScreen({
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
   const [initStatus, setInitStatus] = useState<'pending' | 'in_progress' | 'done' | 'failed'>('pending');
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
+  const execHandleRef = useRef<ExecutionHandle | null>(null);
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -54,26 +57,49 @@ export default function ExecuteScreen({
       setExecuting(true);
       setRunCount((c) => c + 1);
     }
-    // Retry failed tasks
-    if (ch === 'r' && started && !executing) {
-      const hasFailed = currentPlan.tasks.some((t) => t.status === 'failed');
-      if (hasFailed) {
-        // Reset failed tasks to pending, clear their streams
+    // Retry: if a specific failed task is selected, retry just that task (even mid-execution)
+    if (ch === 'r' && started) {
+      const viewTasks = viewBatchIndex === 0
+        ? []
+        : (batches[viewBatchIndex - 1] ?? [])
+            .map((id) => currentPlan.tasks.find((t) => t.id === id))
+            .filter((t): t is Task => t !== undefined);
+      const selected = viewTasks[selectedTaskIndex];
+      if (selected && selected.status === 'failed' && execHandleRef.current) {
+        // Reset task state in UI
         setCurrentPlan((p) => ({
           ...p,
           tasks: p.tasks.map((t) =>
-            t.status === 'failed' ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
+            t.id === selected.id ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
           ),
         }));
         setTaskStreams((prev) => {
           const next = { ...prev };
-          for (const t of currentPlan.tasks) {
-            if (t.status === 'failed') delete next[t.id];
-          }
+          delete next[selected.id];
           return next;
         });
         setExecuting(true);
-        setRunCount((c) => c + 1);
+        execHandleRef.current.retryTask(selected.id);
+      } else if (!executing) {
+        // Retry all failed tasks when execution has stopped
+        const hasFailed = currentPlan.tasks.some((t) => t.status === 'failed');
+        if (hasFailed) {
+          setCurrentPlan((p) => ({
+            ...p,
+            tasks: p.tasks.map((t) =>
+              t.status === 'failed' ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
+            ),
+          }));
+          setTaskStreams((prev) => {
+            const next = { ...prev };
+            for (const t of currentPlan.tasks) {
+              if (t.status === 'failed') delete next[t.id];
+            }
+            return next;
+          });
+          setExecuting(true);
+          setRunCount((c) => c + 1);
+        }
       }
     }
     if (key.leftArrow) {
@@ -99,9 +125,9 @@ export default function ExecuteScreen({
     if (!started || !executing || runCount === 0) return;
 
     const isRetry = runCount > 1;
-    const execOptions: ExecutionOptions = { skipInit: isRetry };
+    const execOptions: ExecutionOptions = { skipInit: isRetry, codebaseContext };
 
-    executePlan(currentPlan, {
+    const handle = executePlan(currentPlan, {
       onTaskStart: (taskId) => {
         if (taskId === 'project-init') {
           setInitStatus('in_progress');
@@ -152,6 +178,7 @@ export default function ExecuteScreen({
       onAllDone: (finalPlan) => {
         setCurrentPlan(finalPlan);
         setExecuting(false);
+        execHandleRef.current = null;
         savePlan(finalPlan);
         // Only advance to done screen if all tasks succeeded
         const allDone = finalPlan.tasks.every((t) => t.status === 'done');
@@ -161,6 +188,8 @@ export default function ExecuteScreen({
         // Otherwise stay on execute screen — user can press 'r' to retry
       },
     }, execOptions);
+
+    execHandleRef.current = handle;
   }, [runCount]);
 
   const doneCount = currentPlan.tasks.filter((t) => t.status === 'done').length;
@@ -352,13 +381,15 @@ export default function ExecuteScreen({
       <StatusBar
         screen="Execute"
         hint={
-          executing
-            ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
-            : started && failedCount > 0
-              ? '←→: switch batch  ↑↓: select task  r: retry failed  esc: back'
-              : started
-                ? '←→: switch batch  ↑↓: select task  ✓ done  esc: back'
-                : 'x: start  esc: back'
+          executing && failedCount > 0
+            ? '←→: switch batch  ↑↓: select task  r: retry task  ⏳ executing...'
+            : executing
+              ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
+              : started && failedCount > 0
+                ? '←→: switch batch  ↑↓: select task  r: retry failed  esc: back'
+                : started
+                  ? '←→: switch batch  ↑↓: select task  ✓ done  esc: back'
+                  : 'x: start  esc: back'
         }
       />
     </Box>

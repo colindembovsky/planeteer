@@ -99,8 +99,12 @@ The very first character of your response MUST be [`;
 export async function streamClarification(
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
+  codebaseContext?: string,
 ): Promise<void> {
-  return sendPrompt(CLARIFY_SYSTEM_PROMPT, messages, callbacks);
+  const systemPrompt = codebaseContext
+    ? `${CLARIFY_SYSTEM_PROMPT}\n\n${codebaseContext}`
+    : CLARIFY_SYSTEM_PROMPT;
+  return sendPrompt(systemPrompt, messages, callbacks);
 }
 
 /** Extract a JSON array from a response that may contain surrounding prose. */
@@ -126,13 +130,18 @@ export async function generateWBS(
   scopeDescription: string,
   onDelta?: (delta: string, fullText: string) => void,
   maxRetries = 2,
+  codebaseContext?: string,
 ): Promise<Task[]> {
   let lastError: Error | null = null;
+
+  const userContent = codebaseContext
+    ? `${scopeDescription}\n\n${codebaseContext}`
+    : scopeDescription;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
-        { role: 'user', content: scopeDescription },
+        { role: 'user', content: userContent },
       ], { onDelta });
 
       const jsonStr = extractJsonArray(result);

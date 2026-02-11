@@ -9,15 +9,19 @@ import StatusBar from '../components/status-bar.js';
 interface HomeScreenProps {
   onNewPlan: () => void;
   onLoadPlan: (id: string) => void;
+  onExecutePlan: (id: string) => void;
+  onValidatePlan: (id: string) => void;
 }
 
-export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): React.ReactElement {
+export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onValidatePlan }: HomeScreenProps): React.ReactElement {
   const [savedPlans, setSavedPlans] = useState<{ id: string; name: string; updatedAt: string }[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [currentModelLabel, setCurrentModelLabel] = useState(getModelLabel());
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [commandMode, setCommandMode] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   React.useEffect(() => {
     listPlans().then((plans) => {
@@ -47,6 +51,14 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
     }
   };
 
+  const handleHighlight = (item: { value: string }) => {
+    if (item.value !== '__new__') {
+      setSelectedPlanId(item.value);
+    } else {
+      setSelectedPlanId(null);
+    }
+  };
+
   const handleModelSelect = (item: { value: string }) => {
     setModel(item.value);
     setCurrentModelLabel(getModelLabel());
@@ -58,6 +70,19 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
       setShowModelPicker(false);
       return;
     }
+    if (commandMode) {
+      setCommandMode(false);
+      if (selectedPlanId) {
+        if (ch === 'x') {
+          onExecutePlan(selectedPlanId);
+        } else if (ch === 'r') {
+          onLoadPlan(selectedPlanId);
+        } else if (ch === 'v') {
+          onValidatePlan(selectedPlanId);
+        }
+      }
+      return;
+    }
     if (!showModelPicker && ch === 'm') {
       setShowModelPicker(true);
       if (models.length === 0 && !modelsLoading) {
@@ -67,6 +92,9 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
           .catch(() => {})
           .finally(() => setModelsLoading(false));
       }
+    }
+    if (!showModelPicker && ch === '/' && savedPlans.length > 0) {
+      setCommandMode(true);
     }
   });
 
@@ -94,12 +122,27 @@ export default function HomeScreen({ onNewPlan, onLoadPlan }: HomeScreenProps): 
       ) : !loaded ? (
         <Text color="gray">Loading...</Text>
       ) : (
-        <SelectInput items={items} onSelect={handleSelect} />
+        <SelectInput items={items} onSelect={handleSelect} onHighlight={handleHighlight} />
+      )}
+
+      {commandMode && (
+        <Box marginBottom={1}>
+          <Text color="magenta" bold>/ </Text>
+          <Text color="yellow">r</Text><Text color="gray">: refine  </Text>
+          <Text color="yellow">x</Text><Text color="gray">: execute  </Text>
+          <Text color="yellow">v</Text><Text color="gray">: validate</Text>
+        </Box>
       )}
 
       <StatusBar
         screen="Home"
-        hint={showModelPicker ? '↑↓: select  ⏎: choose  esc: back' : '↑↓: select  ⏎: choose  m: model'}
+        hint={
+          commandMode
+            ? 'r: refine  x: execute  v: validate'
+            : showModelPicker
+              ? '↑↓: select  ⏎: choose  esc: back'
+              : '↑↓: select  ⏎: choose  m: model  /: commands'
+        }
         model={currentModelLabel}
       />
     </Box>

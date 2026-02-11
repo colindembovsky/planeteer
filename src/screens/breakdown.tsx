@@ -17,6 +17,7 @@ interface BreakdownScreenProps {
   scopeDescription: string;
   messages: ChatMessage[];
   existingPlan?: Plan;
+  codebaseContext?: string;
   onPlanReady: (plan: Plan) => void;
   onBack: () => void;
 }
@@ -25,6 +26,7 @@ export default function BreakdownScreen({
   scopeDescription,
   messages,
   existingPlan,
+  codebaseContext,
   onPlanReady,
   onBack,
 }: BreakdownScreenProps): React.ReactElement {
@@ -44,7 +46,7 @@ export default function BreakdownScreen({
     setStreamText('');
     generateWBS(scopeDescription, (_delta, fullText) => {
       setStreamText(fullText);
-    })
+    }, 2, codebaseContext || undefined)
       .then((tasks) => {
         // Use first line only, strip markdown bold markers, and cap length
         const planName = scopeDescription
