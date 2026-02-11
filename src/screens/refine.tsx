@@ -196,7 +196,7 @@ export default function RefineScreen({
             ) : (
               <TextInput
                 value={input}
-                onChange={setInput}
+                onChange={(v) => setInput(v.replace(/[\[\]]/g, ''))}
                 onSubmit={handleRefine}
                 placeholder="Describe changes (e.g., 'split task X into two', 'add auth task')"
               />

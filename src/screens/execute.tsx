@@ -226,17 +226,21 @@ export default function ExecuteScreen({
       {started && (
         <Box marginBottom={1}>
           {/* Init tab */}
-          <Box marginRight={1}>
-            <Text
-              color={viewBatchIndex === 0
-                ? (initStatus === 'failed' ? 'red' : initStatus === 'done' ? 'green' : initStatus === 'in_progress' ? 'yellow' : 'gray')
-                : 'gray'}
-              bold={viewBatchIndex === 0}
-              underline={viewBatchIndex === 0}
-            >
-              Init
-            </Text>
-          </Box>
+          {(() => {
+            const initColor = initStatus === 'failed' ? 'red' : initStatus === 'done' ? 'green' : initStatus === 'in_progress' ? 'yellow' : 'gray';
+            const isActive = viewBatchIndex === 0;
+            return (
+              <Box marginRight={1}>
+                <Text
+                  color={initColor}
+                  bold={isActive}
+                  underline={isActive}
+                >
+                  Init
+                </Text>
+              </Box>
+            );
+          })()}
           {/* Real batch tabs */}
           {batches.map((_batchIds, i) => {
             const displayIdx = i + 1;
@@ -254,14 +258,15 @@ export default function ExecuteScreen({
                 : batchRunning
                   ? 'yellow'
                   : 'gray';
+            const parallel = _batchIds.length > 1;
             return (
               <Box key={i} marginRight={1}>
                 <Text
-                  color={isActive ? batchColor : 'gray'}
+                  color={batchColor}
                   bold={isActive}
                   underline={isActive}
                 >
-                  Batch {i + 1}
+                  {parallel ? '⫘ ' : ''}Batch {i + 1}{parallel ? ` (×${_batchIds.length})` : ''}
                 </Text>
               </Box>
             );
