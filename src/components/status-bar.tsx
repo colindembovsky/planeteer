@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, Box } from 'ink';
+import { Text, Box, useStdout } from 'ink';
 import { getModelLabel } from '../services/copilot.js';
 
 interface StatusBarProps {
@@ -10,22 +10,30 @@ interface StatusBarProps {
 
 export default function StatusBar({ screen, hint, model }: StatusBarProps): React.ReactElement {
   const displayModel = model || getModelLabel();
+  const { stdout } = useStdout();
+  // Parent App uses padding={1} → 2 cols consumed; border chars │…│ take 2 more
+  const innerWidth = (stdout?.columns ?? 80) - 4;
+
+  // Build right-side content: "model  hint  q: quit"
+  const rightParts: string[] = [displayModel];
+  if (hint) rightParts.push(hint);
+  rightParts.push('q: quit');
+  const rightText = rightParts.join('  ');
+
+  // Left: " Screen", right: "rightText "  (each with 1-char inner padding)
+  const leftText = ` ${screen}`;
+  const rightWithPad = `${rightText} `;
+  const gap = Math.max(1, innerWidth - leftText.length - rightWithPad.length);
+
+  const hRule = '─'.repeat(innerWidth);
+  // Build exact content line as a single string so Ink Box layout cannot shift it
+  const contentLine = `│${leftText}${' '.repeat(gap)}${rightWithPad}│`;
+
   return (
-    <Box borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between" width="100%">
-      <Box>
-        <Text color="cyan" bold>{screen}</Text>
-      </Box>
-      <Box>
-        <Text color="magenta">🤖 {displayModel}</Text>
-      </Box>
-      {hint && (
-        <Box>
-          <Text color="gray">{hint}</Text>
-        </Box>
-      )}
-      <Box>
-        <Text color="gray">q: quit</Text>
-      </Box>
+    <Box flexDirection="column">
+      <Text color="gray">{'┌' + hRule + '┐'}</Text>
+      <Text color="gray">{contentLine}</Text>
+      <Text color="gray">{'└' + hRule + '┘'}</Text>
     </Box>
   );
 }

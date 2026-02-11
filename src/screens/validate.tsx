@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Box, Text, useInput, useStdout } from 'ink';
 import type { Plan } from '../models/plan.js';
 import { validatePlan } from '../services/validator.js';
 import type { ValidationReport, TaskValidationResult, CriterionVerdict } from '../services/validator.js';
@@ -36,7 +36,17 @@ export default function ValidateScreen({
   const [completedTasks, setCompletedTasks] = useState<TaskValidationResult[]>([]);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [streamText, setStreamText] = useState<Record<string, string>>({});
+  const [streamText, setStreamText] = useState('');
+
+  // Throttle streaming updates to avoid excessive re-renders
+  const streamBufferRef = useRef('');
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const THROTTLE_MS = 150;
+
+  const flushStream = useCallback(() => {
+    setStreamText(streamBufferRef.current);
+    throttleTimerRef.current = null;
+  }, []);
 
   const totalTasks = plan.tasks.length;
   const doneValidating = completedTasks.length;
@@ -63,23 +73,45 @@ export default function ValidateScreen({
     validatePlan(plan, {
       onTaskStart: (taskId) => {
         setCurrentTaskId(taskId);
+        streamBufferRef.current = '';
+        setStreamText('');
       },
-      onTaskDelta: (taskId, _delta, fullText) => {
-        setStreamText((prev) => ({ ...prev, [taskId]: fullText }));
+      onTaskDelta: (_taskId, _delta, fullText) => {
+        streamBufferRef.current = fullText;
+        if (!throttleTimerRef.current) {
+          throttleTimerRef.current = setTimeout(flushStream, THROTTLE_MS);
+        }
       },
       onTaskDone: (_taskId, result) => {
+        if (throttleTimerRef.current) {
+          clearTimeout(throttleTimerRef.current);
+          throttleTimerRef.current = null;
+        }
         setCompletedTasks((prev) => [...prev, result]);
         setCurrentTaskId(null);
+        setStreamText('');
       },
       onTaskError: (taskId, error) => {
+        if (throttleTimerRef.current) {
+          clearTimeout(throttleTimerRef.current);
+          throttleTimerRef.current = null;
+        }
         setErrorMsg(`Task ${taskId}: ${error}`);
         setCurrentTaskId(null);
+        setStreamText('');
       },
       onAllDone: (finalReport) => {
         setReport(finalReport);
         setValidating(false);
       },
     });
+
+    return () => {
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+        throttleTimerRef.current = null;
+      }
+    };
   }, [started]);
 
   // Determine which results to display
@@ -92,8 +124,25 @@ export default function ValidateScreen({
   const filled = Math.round((doneValidating / totalTasks) * barWidth) || 0;
   const progressBar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
 
+  // Terminal height for fixed layout
+  const { stdout } = useStdout();
+  const termRows = stdout?.rows ?? 24;
+  // Reserve rows: 1 padding top + 2 header + 1 not-started/progress + 3 report summary + 3 status bar + 1 padding bottom = ~11
+  const contentRows = Math.max(6, termRows - 11);
+
+  // Window the task list around the selected index
+  const maxTaskListRows = Math.min(displayResults.length, Math.floor(contentRows / 2));
+  let taskListStart = 0;
+  if (displayResults.length > maxTaskListRows) {
+    taskListStart = Math.max(0, Math.min(selectedTaskIndex - Math.floor(maxTaskListRows / 2), displayResults.length - maxTaskListRows));
+  }
+  const visibleResults = displayResults.slice(taskListStart, taskListStart + maxTaskListRows);
+
+  // Detail panel gets remaining rows
+  const detailRows = Math.max(3, contentRows - maxTaskListRows - 1);
+
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={termRows}>
       {/* Header */}
       <Box marginBottom={1}>
         <Text bold color="cyan">Validate Plan</Text>
@@ -104,7 +153,7 @@ export default function ValidateScreen({
 
       {/* Not started */}
       {!started && (
-        <Box marginBottom={1}>
+        <Box>
           <Text color="yellow">
             Press v to validate {totalTasks} tasks against their acceptance criteria
           </Text>
@@ -113,7 +162,7 @@ export default function ValidateScreen({
 
       {/* Progress bar */}
       {started && (
-        <Box marginBottom={1}>
+        <Box>
           <Text color="green">{progressBar}</Text>
           <Text color="gray"> {progressPct}%</Text>
           {validating && currentTaskId && (
@@ -129,7 +178,7 @@ export default function ValidateScreen({
 
       {/* Overall summary when done */}
       {report && (
-        <Box marginBottom={1} flexDirection="column">
+        <Box flexDirection="column">
           <Box>
             <Text bold color="white">Validation Report</Text>
             <Text color="gray"> — {report.planName}</Text>
@@ -148,11 +197,15 @@ export default function ValidateScreen({
         </Box>
       )}
 
-      {/* Task list */}
-      {displayResults.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          {displayResults.map((tr, i) => {
-            const isSelected = i === selectedTaskIndex;
+      {/* Task list — windowed */}
+      {visibleResults.length > 0 && (
+        <Box flexDirection="column" height={maxTaskListRows + 1} overflow="hidden">
+          {taskListStart > 0 && (
+            <Text color="gray" dimColor>  ↑ {taskListStart} more above</Text>
+          )}
+          {visibleResults.map((tr) => {
+            const realIndex = displayResults.indexOf(tr);
+            const isSelected = realIndex === selectedTaskIndex;
             const passCount = tr.criteriaResults.filter((c) => c.verdict === 'pass').length;
             const totalCount = tr.criteriaResults.length;
             const allPass = passCount === totalCount && totalCount > 0;
@@ -172,69 +225,67 @@ export default function ValidateScreen({
               </Box>
             );
           })}
+          {taskListStart + maxTaskListRows < displayResults.length && (
+            <Text color="gray" dimColor>  ↓ {displayResults.length - taskListStart - maxTaskListRows} more below</Text>
+          )}
         </Box>
       )}
 
-      {/* Detail view for selected task */}
+      {/* Detail view for selected task — constrained height */}
       {selectedResult && (
         <Box
           flexDirection="column"
-          borderStyle="round"
-          borderColor="cyan"
-          paddingX={1}
+          marginLeft={1}
+          height={detailRows}
+          overflow="hidden"
         >
-          <Box marginBottom={1}>
+          <Box>
+            <Text color="cyan">▌ </Text>
             <Text color="cyan" bold>{selectedResult.taskId}</Text>
             <Text color="gray"> — {selectedResult.taskTitle}</Text>
             <Text color="gray"> [{selectedResult.status}]</Text>
           </Box>
 
-          <Text color="white" bold dimColor>  EXPECTED vs ACTUAL</Text>
-
-          {selectedResult.criteriaResults.map((cr, i) => (
-            <Box key={i} flexDirection="column" marginTop={i > 0 ? 1 : 0}>
-              <Box>
-                <Text>{VERDICT_ICON[cr.verdict]} </Text>
-                <Text color={VERDICT_COLOR[cr.verdict]} bold>
-                  [{cr.verdict.toUpperCase()}]
-                </Text>
-              </Box>
-              <Box marginLeft={3}>
-                <Text color="white" bold>EXPECTED: </Text>
-                <Text color="gray" wrap="wrap">{cr.criterion}</Text>
-              </Box>
-              <Box marginLeft={3}>
-                <Text color="white" bold>ACTUAL:   </Text>
-                <Text color={VERDICT_COLOR[cr.verdict]} wrap="wrap">{cr.actual}</Text>
-              </Box>
+          {selectedResult.criteriaResults.slice(0, detailRows - 2).map((cr, i) => (
+            <Box key={i}>
+              <Text color="cyan">▌ </Text>
+              <Text>{VERDICT_ICON[cr.verdict]} </Text>
+              <Text color={VERDICT_COLOR[cr.verdict]} bold>
+                [{cr.verdict.toUpperCase()}]
+              </Text>
+              <Text color="gray"> {cr.criterion}</Text>
             </Box>
           ))}
 
-          {selectedResult.summary && (
-            <Box marginTop={1}>
+          {selectedResult.summary && selectedResult.criteriaResults.length < detailRows - 3 && (
+            <Box>
+              <Text color="cyan">▌ </Text>
               <Text color="gray" italic>Summary: {selectedResult.summary}</Text>
             </Box>
           )}
         </Box>
       )}
 
-      {/* Currently streaming validation */}
-      {validating && currentTaskId && streamText[currentTaskId] && (
+      {/* Currently streaming validation — constrained */}
+      {validating && currentTaskId && streamText && !selectedResult && (
         <Box
           flexDirection="column"
-          borderStyle="round"
-          borderColor="yellow"
-          paddingX={1}
+          marginLeft={1}
           height={6}
-          marginTop={1}
         >
-          <Text color="yellow" bold>Validating: {currentTaskId}</Text>
+          <Box>
+            <Text color="yellow">▌ </Text>
+            <Text color="yellow" bold>Validating: {currentTaskId}</Text>
+          </Box>
           {(() => {
-            const lines = streamText[currentTaskId]!.split('\n');
+            const lines = streamText.split('\n');
             const maxLines = 4;
             const visible = lines.slice(-maxLines);
             return visible.map((line, i) => (
-              <Text key={i} color="gray" wrap="truncate">{line}</Text>
+              <Box key={i}>
+                <Text color="yellow">▌ </Text>
+                <Text color="gray" wrap="truncate">{line}</Text>
+              </Box>
             ));
           })()}
         </Box>
@@ -242,10 +293,13 @@ export default function ValidateScreen({
 
       {/* Error */}
       {errorMsg && (
-        <Box marginTop={1}>
+        <Box>
           <Text color="red">⚠ {errorMsg}</Text>
         </Box>
       )}
+
+      {/* Spacer to push status bar to bottom */}
+      <Box flexGrow={1} />
 
       <StatusBar
         screen="Validate"

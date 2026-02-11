@@ -298,9 +298,7 @@ export default function ExecuteScreen({
       {started && selectedTask && selectedStream && (
         <Box
           flexDirection="column"
-          borderStyle="round"
-          borderColor={STATUS_COLOR[selectedTask.status] ?? 'gray'}
-          paddingX={1}
+          marginLeft={1}
           height={10}
         >
           <Box marginBottom={0}>
@@ -330,11 +328,8 @@ export default function ExecuteScreen({
 
       {/* No stream yet for selected task */}
       {started && selectedTask && !selectedStream && selectedTask.status === 'in_progress' && (
-        <Box
-          borderStyle="round"
-          borderColor="yellow"
-          paddingX={1}
-        >
+        <Box marginLeft={1}>
+          <Text color="yellow">▌ </Text>
           <Spinner label={`Waiting for output from ${selectedTask.id}`} showElapsed />
         </Box>
       )}

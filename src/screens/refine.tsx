@@ -204,7 +204,8 @@ export default function RefineScreen({
           </Box>
 
           {refining && streamText && (
-            <Box marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
+            <Box marginTop={1} marginLeft={1}>
+              <Text color="gray">▌ </Text>
               <StreamingText text={streamText} maxLines={6} label="Response" />
             </Box>
           )}

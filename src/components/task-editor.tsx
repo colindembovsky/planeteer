@@ -153,7 +153,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
   };
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0}>
+    <Box flexDirection="column" marginLeft={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">Edit Task: </Text>
         <Text bold>{task.id}</Text>

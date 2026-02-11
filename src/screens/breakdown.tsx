@@ -46,9 +46,15 @@ export default function BreakdownScreen({
       setStreamText(fullText);
     })
       .then((tasks) => {
+        // Use first line only, strip markdown bold markers, and cap length
+        const planName = scopeDescription
+          .split('\n')[0]!
+          .replace(/\*\*/g, '')
+          .trim()
+          .slice(0, 60);
         const newPlan = createPlan({
           id: nanoid(8),
-          name: scopeDescription.slice(0, 60),
+          name: planName,
           description: scopeDescription,
           tasks,
         });
@@ -91,7 +97,8 @@ export default function BreakdownScreen({
           <Spinner label="Generating work breakdown" showElapsed />
         </Box>
         {streamText ? (
-          <Box marginBottom={1} borderStyle="round" borderColor="gray" paddingX={1}>
+          <Box marginBottom={1} marginLeft={1}>
+            <Text color="gray">▌ </Text>
             <StreamingText text={streamText} maxLines={8} label="Response" />
           </Box>
         ) : (
