@@ -24,7 +24,7 @@ export interface ChatMessage {
   content: string;
 }
 
-export type Screen = 'welcome' | 'home' | 'clarify' | 'breakdown' | 'refine' | 'execute';
+export type Screen = 'welcome' | 'home' | 'clarify' | 'breakdown' | 'refine' | 'execute' | 'validate';
 
 export function createTask(partial: Partial<Task> & Pick<Task, 'id' | 'title'>): Task {
   return {

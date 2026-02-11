@@ -18,6 +18,7 @@ interface RefineScreenProps {
   plan: Plan;
   onPlanUpdated: (plan: Plan) => void;
   onExecute: (plan: Plan) => void;
+  onValidate?: (plan: Plan) => void;
   onBack: () => void;
 }
 
@@ -25,6 +26,7 @@ export default function RefineScreen({
   plan,
   onPlanUpdated,
   onExecute,
+  onValidate,
   onBack,
 }: RefineScreenProps): React.ReactElement {
   const [currentPlan, setCurrentPlan] = useState(plan);
@@ -82,6 +84,8 @@ export default function RefineScreen({
         if (task) setEditingTask(task);
       } else if (ch === 'x') {
         onExecute(currentPlan);
+      } else if (ch === 'v') {
+        onValidate?.(currentPlan);
       } else if (ch === 's') {
         savePlan(currentPlan).then(() => setSaved(true));
         setTimeout(() => setSaved(false), 2000);
@@ -221,7 +225,7 @@ export default function RefineScreen({
       {commandMode && (
         <Box marginTop={1}>
           <Text color="yellow" bold>/ </Text>
-          <Text color="gray">e: edit  s: save  x: execute  r: retry  esc: cancel</Text>
+          <Text color="gray">e: edit  s: save  x: execute  v: validate  r: retry  esc: cancel</Text>
         </Box>
       )}
 
@@ -229,7 +233,7 @@ export default function RefineScreen({
 
       <StatusBar
         screen="Refine"
-        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/x/r)  esc: back"
+        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/x/v/r)  esc: back"
       />
     </Box>
   );

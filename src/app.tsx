@@ -9,6 +9,7 @@ import ClarifyScreen from './screens/clarify.js';
 import BreakdownScreen from './screens/breakdown.js';
 import RefineScreen from './screens/refine.js';
 import ExecuteScreen from './screens/execute.js';
+import ValidateScreen from './screens/validate.js';
 
 interface AppProps {
   initialScreen?: Screen;
@@ -78,6 +79,11 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
     savePlan(p);
   }, []);
 
+  const handleValidate = useCallback((p: Plan) => {
+    setPlan(p);
+    setScreen('validate');
+  }, []);
+
   return (
     <Box flexDirection="column" padding={1}>
       {screen === 'welcome' && (
@@ -106,6 +112,7 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
           plan={plan}
           onPlanUpdated={handlePlanUpdated}
           onExecute={handleExecute}
+          onValidate={handleValidate}
           onBack={() => setScreen('breakdown')}
         />
       )}
@@ -113,6 +120,12 @@ export default function App({ initialScreen, initialPlanId }: AppProps): React.R
         <ExecuteScreen
           plan={plan}
           onDone={handleExecuteDone}
+          onBack={() => setScreen('refine')}
+        />
+      )}
+      {screen === 'validate' && plan && (
+        <ValidateScreen
+          plan={plan}
           onBack={() => setScreen('refine')}
         />
       )}
