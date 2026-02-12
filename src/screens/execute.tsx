@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
 import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
-import { savePlan } from '../services/persistence.js';
+import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
 import StatusBar from '../components/status-bar.js';
@@ -45,6 +45,7 @@ export default function ExecuteScreen({
   const [initStatus, setInitStatus] = useState<'pending' | 'in_progress' | 'done' | 'failed'>('pending');
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
   const execHandleRef = useRef<ExecutionHandle | null>(null);
+  const [summarized, setSummarized] = useState('');
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -101,6 +102,13 @@ export default function ExecuteScreen({
           setRunCount((c) => c + 1);
         }
       }
+    }
+    // Summarize: write summary markdown to project root
+    if (ch === 'z' && started && !executing) {
+      summarizePlan(currentPlan).then((path) => {
+        setSummarized(path);
+        setTimeout(() => setSummarized(''), 3000);
+      });
     }
     if (key.leftArrow) {
       setViewBatchIndex((i) => Math.max(0, i - 1));
@@ -378,6 +386,21 @@ export default function ExecuteScreen({
         </Box>
       )}
 
+      {/* Summarize hint when execution is done */}
+      {started && !executing && summarized === '' && (
+        <Box marginBottom={1}>
+          <Text color="cyan">Tip: press </Text>
+          <Text color="green" bold>z</Text>
+          <Text color="cyan"> to summarize this plan and execution to a markdown file</Text>
+        </Box>
+      )}
+
+      {summarized !== '' && (
+        <Box marginBottom={1}>
+          <Text color="green">✓ Summary written to {summarized}</Text>
+        </Box>
+      )}
+
       <StatusBar
         screen="Execute"
         hint={
@@ -386,9 +409,9 @@ export default function ExecuteScreen({
             : executing
               ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
               : started && failedCount > 0
-                ? '←→: switch batch  ↑↓: select task  r: retry failed  esc: back'
+                ? '←→: switch batch  ↑↓: select task  r: retry  z: summarize  esc: back'
                 : started
-                  ? '←→: switch batch  ↑↓: select task  ✓ done  esc: back'
+                  ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
                   : 'x: start  esc: back'
         }
       />

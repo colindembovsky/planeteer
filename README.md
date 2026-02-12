@@ -1,5 +1,13 @@
 # 🌍 Planeteer
 
+```text
+ ____  _                  _                
+|  _ \| | __ _ _ __   ___| |_ ___  ___ _ __
+| |_) | |/ _` | '_ \ / _ \ __/ _ \/ _ \ '__|
+|  __/| | (_| | | | |  __/ ||  __/  __/ |   
+|_|   |_|\__,_|_| |_|\___|\__\___|\___|_|   
+```
+
 AI-powered work breakdown and parallel execution TUI. Describe what you want to build, and Planeteer uses the GitHub Copilot SDK to clarify your intent, generate a structured work breakdown with dependencies, and execute tasks in parallel via Copilot agents.
 
 ## Prerequisites

@@ -123,27 +123,31 @@ export async function validatePlan(
   callbacks: ValidationCallbacks,
 ): Promise<ValidationReport> {
   const taskResults: TaskValidationResult[] = [];
+  const taskOrder = plan.tasks.map((t) => t.id);
 
-  // Validate each task sequentially (to avoid overwhelming the API)
-  for (const task of plan.tasks) {
-    // Skip tasks that were never executed
-    if (task.status === 'pending') {
-      const skippedResult: TaskValidationResult = {
-        taskId: task.id,
-        taskTitle: task.title,
-        status: task.status,
-        criteriaResults: task.acceptanceCriteria.map((ac) => ({
-          criterion: ac,
-          verdict: 'unknown' as CriterionVerdict,
-          actual: 'Task was not executed',
-        })),
-        summary: 'Skipped — task was not executed',
-      };
-      taskResults.push(skippedResult);
-      callbacks.onTaskDone(task.id, skippedResult);
-      continue;
-    }
+  // Separate pending (skipped) tasks from tasks to validate
+  const pendingTasks = plan.tasks.filter((t) => t.status === 'pending');
+  const tasksToValidate = plan.tasks.filter((t) => t.status !== 'pending');
 
+  // Immediately report skipped tasks
+  for (const task of pendingTasks) {
+    const skippedResult: TaskValidationResult = {
+      taskId: task.id,
+      taskTitle: task.title,
+      status: task.status,
+      criteriaResults: task.acceptanceCriteria.map((ac) => ({
+        criterion: ac,
+        verdict: 'unknown' as CriterionVerdict,
+        actual: 'Task was not executed',
+      })),
+      summary: 'Skipped — task was not executed',
+    };
+    taskResults.push(skippedResult);
+    callbacks.onTaskDone(task.id, skippedResult);
+  }
+
+  // Validate remaining tasks in parallel
+  const validationPromises = tasksToValidate.map(async (task) => {
     callbacks.onTaskStart(task.id);
 
     try {
@@ -176,7 +180,12 @@ export async function validatePlan(
       };
       taskResults.push(errorResult);
     }
-  }
+  });
+
+  await Promise.all(validationPromises);
+
+  // Sort results to match original task order
+  taskResults.sort((a, b) => taskOrder.indexOf(a.taskId) - taskOrder.indexOf(b.taskId));
 
   const overallPass = taskResults.reduce(
     (sum, tr) => sum + tr.criteriaResults.filter((c) => c.verdict === 'pass').length, 0,

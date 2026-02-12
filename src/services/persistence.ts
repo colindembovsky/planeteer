@@ -2,7 +2,7 @@ import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Plan } from '../models/plan.js';
-import { planToMarkdown } from '../utils/markdown.js';
+import { planToMarkdown, planToSummaryMarkdown } from '../utils/markdown.js';
 
 const PLAN_DIR = '.planeteer';
 
@@ -52,6 +52,17 @@ export async function listPlans(): Promise<{ id: string; name: string; updatedAt
   }
 
   return plans.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/**
+ * Write a summary markdown file to the project root (cwd).
+ * Returns the absolute path of the written file.
+ */
+export async function summarizePlan(plan: Plan): Promise<string> {
+  const filename = `${plan.name.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').slice(0, 60)}-summary.md`;
+  const outPath = join(process.cwd(), filename);
+  await writeFile(outPath, planToSummaryMarkdown(plan), 'utf-8');
+  return outPath;
 }
 
 export async function deletePlan(id: string): Promise<void> {

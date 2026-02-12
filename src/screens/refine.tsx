@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { Plan, Task } from '../models/plan.js';
 import { refineWBS } from '../services/planner.js';
-import { savePlan } from '../services/persistence.js';
+import { savePlan, summarizePlan } from '../services/persistence.js';
 import { detectCycles, computeBatches } from '../utils/dependency-graph.js';
 import TaskTree from '../components/task-tree.js';
 import BatchView from '../components/batch-view.js';
@@ -89,6 +89,11 @@ export default function RefineScreen({
       } else if (ch === 's') {
         savePlan(currentPlan).then(() => setSaved(true));
         setTimeout(() => setSaved(false), 2000);
+      } else if (ch === 'z') {
+        summarizePlan(currentPlan).then((path) => {
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        });
       } else if (ch === 'r' && refineError) {
         handleRetryRefine();
       }
@@ -226,7 +231,7 @@ export default function RefineScreen({
       {commandMode && (
         <Box marginTop={1}>
           <Text color="yellow" bold>/ </Text>
-          <Text color="gray">e: edit  s: save  x: execute  v: validate  r: retry  esc: cancel</Text>
+          <Text color="gray">e: edit  s: save  z: summarize  x: execute  v: validate  r: retry  esc: cancel</Text>
         </Box>
       )}
 
@@ -234,7 +239,7 @@ export default function RefineScreen({
 
       <StatusBar
         screen="Refine"
-        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/x/v/r)  esc: back"
+        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/z/x/v/r)  esc: back"
       />
     </Box>
   );

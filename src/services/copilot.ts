@@ -77,16 +77,27 @@ export function getModelLabel(): string {
 }
 
 let client: CopilotClient | null = null;
+let clientPromise: Promise<CopilotClient> | null = null;
 
 export async function getClient(): Promise<CopilotClient> {
-  if (!client) {
-    client = new CopilotClient();
-    await client.start();
-  }
-  return client;
+  if (client) return client;
+  if (clientPromise) return clientPromise;
+
+  clientPromise = (async () => {
+    const c = new CopilotClient();
+    await c.start();
+    client = c;
+    return c;
+  })();
+
+  return clientPromise;
 }
 
 export async function stopClient(): Promise<void> {
+  if (clientPromise) {
+    await clientPromise.catch(() => {});
+    clientPromise = null;
+  }
   if (client) {
     await client.stop();
     client = null;

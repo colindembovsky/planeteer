@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import type { Plan } from '../models/plan.js';
-import { listPlans } from '../services/persistence.js';
+import { listPlans, loadPlan, summarizePlan } from '../services/persistence.js';
 import { fetchModels, getModel, setModel, getModelLabel, type ModelEntry } from '../services/copilot.js';
 import StatusBar from '../components/status-bar.js';
 
@@ -22,6 +22,7 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
   const [modelsLoading, setModelsLoading] = useState(false);
   const [commandMode, setCommandMode] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [summarized, setSummarized] = useState('');
 
   React.useEffect(() => {
     listPlans().then((plans) => {
@@ -79,6 +80,15 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
           onLoadPlan(selectedPlanId);
         } else if (ch === 'v') {
           onValidatePlan(selectedPlanId);
+        } else if (ch === 'z') {
+          loadPlan(selectedPlanId).then((p) => {
+            if (p) {
+              summarizePlan(p).then((path) => {
+                setSummarized(path);
+                setTimeout(() => setSummarized(''), 3000);
+              });
+            }
+          });
         }
       }
       return;
@@ -125,12 +135,19 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
         <SelectInput items={items} onSelect={handleSelect} onHighlight={handleHighlight} />
       )}
 
+      {summarized !== '' && (
+        <Box marginBottom={1}>
+          <Text color="green">✓ Summary written to {summarized}</Text>
+        </Box>
+      )}
+
       {commandMode && (
         <Box marginBottom={1}>
           <Text color="magenta" bold>/ </Text>
           <Text color="yellow">r</Text><Text color="gray">: refine  </Text>
           <Text color="yellow">x</Text><Text color="gray">: execute  </Text>
-          <Text color="yellow">v</Text><Text color="gray">: validate</Text>
+          <Text color="yellow">v</Text><Text color="gray">: validate  </Text>
+          <Text color="yellow">z</Text><Text color="gray">: summarize</Text>
         </Box>
       )}
 
@@ -138,7 +155,7 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
         screen="Home"
         hint={
           commandMode
-            ? 'r: refine  x: execute  v: validate'
+            ? 'r: refine  x: execute  v: validate  z: summarize'
             : showModelPicker
               ? '↑↓: select  ⏎: choose  esc: back'
               : '↑↓: select  ⏎: choose  m: model  /: commands'

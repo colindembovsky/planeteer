@@ -32,21 +32,36 @@ export default function ValidateScreen({
   const [validating, setValidating] = useState(false);
   const [started, setStarted] = useState(false);
   const [report, setReport] = useState<ValidationReport | null>(null);
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [completedTasks, setCompletedTasks] = useState<TaskValidationResult[]>([]);
+  const completedTasksRef = useRef<TaskValidationResult[]>([]);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [streamText, setStreamText] = useState('');
 
-  // Throttle streaming updates to avoid excessive re-renders
-  const streamBufferRef = useRef('');
-  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const THROTTLE_MS = 150;
+  // Fast-changing data lives in refs to avoid per-event re-renders
+  const activeTasksRef = useRef<Set<string>>(new Set());
+  const streamBufferRef = useRef<Record<string, string>>({});
 
-  const flushStream = useCallback(() => {
-    setStreamText(streamBufferRef.current);
-    throttleTimerRef.current = null;
+  // A single tick counter drives periodic UI refreshes while validating
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [, setTick] = useState(0);
+  const TICK_MS = 400;
+
+  // Start / stop the render tick
+  const startTick = useCallback(() => {
+    if (tickRef.current) return;
+    tickRef.current = setInterval(() => setTick((t) => t + 1), TICK_MS);
   }, []);
+  const stopTick = useCallback(() => {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
+
+  // Snapshot refs for render (read once per render cycle)
+  const activeTaskIds = [...activeTasksRef.current];
+  const activeCount = activeTaskIds.length;
+  const taskStreams = streamBufferRef.current;
+  const completedTasks = completedTasksRef.current;
 
   const totalTasks = plan.tasks.length;
   const doneValidating = completedTasks.length;
@@ -70,47 +85,35 @@ export default function ValidateScreen({
   useEffect(() => {
     if (!started || !validating) return;
 
+    startTick();
+
     validatePlan(plan, {
       onTaskStart: (taskId) => {
-        setCurrentTaskId(taskId);
-        streamBufferRef.current = '';
-        setStreamText('');
+        activeTasksRef.current.add(taskId);
+        streamBufferRef.current[taskId] = '';
       },
-      onTaskDelta: (_taskId, _delta, fullText) => {
-        streamBufferRef.current = fullText;
-        if (!throttleTimerRef.current) {
-          throttleTimerRef.current = setTimeout(flushStream, THROTTLE_MS);
-        }
+      onTaskDelta: (taskId, _delta, fullText) => {
+        streamBufferRef.current[taskId] = fullText;
       },
       onTaskDone: (_taskId, result) => {
-        if (throttleTimerRef.current) {
-          clearTimeout(throttleTimerRef.current);
-          throttleTimerRef.current = null;
-        }
-        setCompletedTasks((prev) => [...prev, result]);
-        setCurrentTaskId(null);
-        setStreamText('');
+        activeTasksRef.current.delete(result.taskId);
+        delete streamBufferRef.current[result.taskId];
+        completedTasksRef.current.push(result);
       },
       onTaskError: (taskId, error) => {
-        if (throttleTimerRef.current) {
-          clearTimeout(throttleTimerRef.current);
-          throttleTimerRef.current = null;
-        }
+        activeTasksRef.current.delete(taskId);
+        delete streamBufferRef.current[taskId];
         setErrorMsg(`Task ${taskId}: ${error}`);
-        setCurrentTaskId(null);
-        setStreamText('');
       },
       onAllDone: (finalReport) => {
+        stopTick();
         setReport(finalReport);
         setValidating(false);
       },
     });
 
     return () => {
-      if (throttleTimerRef.current) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
+      stopTick();
     };
   }, [started]);
 
@@ -165,10 +168,10 @@ export default function ValidateScreen({
         <Box>
           <Text color="green">{progressBar}</Text>
           <Text color="gray"> {progressPct}%</Text>
-          {validating && currentTaskId && (
+          {validating && activeCount > 0 && (
             <>
               <Text color="gray"> — validating </Text>
-              <Text color="yellow">{currentTaskId}</Text>
+              <Text color="yellow">{activeCount} task{activeCount > 1 ? 's' : ''}</Text>
               <Text color="yellow"> </Text>
               <Spinner />
             </>
@@ -266,28 +269,45 @@ export default function ValidateScreen({
         </Box>
       )}
 
-      {/* Currently streaming validation — constrained */}
-      {validating && currentTaskId && streamText && !selectedResult && (
+      {/* Active validations — fixed height panel */}
+      {validating && !selectedResult && (
         <Box
           flexDirection="column"
           marginLeft={1}
-          height={6}
+          height={8}
+          overflow="hidden"
         >
-          <Box>
-            <Text color="yellow">▌ </Text>
-            <Text color="yellow" bold>Validating: {currentTaskId}</Text>
-          </Box>
-          {(() => {
-            const lines = streamText.split('\n');
-            const maxLines = 4;
-            const visible = lines.slice(-maxLines);
-            return visible.map((line, i) => (
-              <Box key={i}>
-                <Text color="yellow">▌ </Text>
-                <Text color="gray" wrap="truncate">{line}</Text>
-              </Box>
-            ));
-          })()}
+          {activeCount > 0 ? (
+            <>
+              {activeTaskIds.slice(0, 4).map((taskId) => {
+                const stream = taskStreams[taskId];
+                const lastLine = stream ? stream.split('\n').filter(Boolean).pop() ?? '' : '';
+                return (
+                  <Box key={taskId} flexDirection="column">
+                    <Box>
+                      <Text color="yellow">▌ </Text>
+                      <Text color="yellow" bold>{taskId}</Text>
+                      <Text color="gray"> </Text>
+                      <Spinner />
+                    </Box>
+                    {lastLine ? (
+                      <Box>
+                        <Text color="yellow">▌ </Text>
+                        <Text color="gray" wrap="truncate">{lastLine.slice(0, 80)}</Text>
+                      </Box>
+                    ) : (
+                      <Box><Text> </Text></Box>
+                    )}
+                  </Box>
+                );
+              })}
+              {activeCount > 4 && (
+                <Text color="gray" dimColor>  ... and {activeCount - 4} more</Text>
+              )}
+            </>
+          ) : (
+            <Box><Text color="gray">Waiting for tasks...</Text></Box>
+          )}
         </Box>
       )}
 
