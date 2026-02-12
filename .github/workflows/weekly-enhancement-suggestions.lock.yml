@@ -19,9 +19,9 @@
 #   gh aw compile
 # For more information: https://github.com/github/gh-aw/blob/main/.github/aw/github-agentic-workflows.md
 #
-# Weekly analysis of releases and commits to suggest project enhancements
+# Weekly analysis of Copilot SDK releases and commits to suggest project enhancements
 #
-# frontmatter-hash: 4f98265693cd16020882b9de4c3e82efaa87cf99e677af541f8af5923d6b136e
+# frontmatter-hash: f193084cacc63afffae93b8141ce98341ee2e72de49d3eb23fc345d69ec2fa1f
 
 name: "Weekly Enhancement Suggestions"
 "on":
@@ -953,7 +953,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           WORKFLOW_NAME: "Weekly Enhancement Suggestions"
-          WORKFLOW_DESCRIPTION: "Weekly analysis of releases and commits to suggest project enhancements"
+          WORKFLOW_DESCRIPTION: "Weekly analysis of Copilot SDK releases and commits to suggest project enhancements"
           HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
         with:
           script: |
