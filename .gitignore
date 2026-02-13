@@ -1,4 +1,5 @@
 node_modules/
 dist/
 .planeteer/
+!.planeteer/skills/example-web-app-skill.yaml
 *.tsbuildinfo

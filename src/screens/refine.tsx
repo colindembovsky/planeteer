@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import type { Plan, Task } from '../models/plan.js';
+import type { Plan, Task, SkillConfig } from '../models/plan.js';
 import { refineWBS } from '../services/planner.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
+import { getSkillOptions } from '../services/copilot.js';
 import { detectCycles, computeBatches } from '../utils/dependency-graph.js';
 import TaskTree from '../components/task-tree.js';
 import BatchView from '../components/batch-view.js';
@@ -12,7 +13,7 @@ import Spinner from '../components/spinner.js';
 import StreamingText from '../components/streaming-text.js';
 import StatusBar from '../components/status-bar.js';
 
-type ViewMode = 'tree' | 'batch';
+type ViewMode = 'tree' | 'batch' | 'skills';
 
 interface RefineScreenProps {
   plan: Plan;
@@ -40,6 +41,19 @@ export default function RefineScreen({
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [commandMode, setCommandMode] = useState(false);
+
+  const toggleSkill = useCallback(
+    (skillName: string) => {
+      const skills = currentPlan.skills || [];
+      const updatedSkills = skills.map((s) =>
+        s.name === skillName ? { ...s, enabled: !s.enabled } : s
+      );
+      const updated = { ...currentPlan, skills: updatedSkills, updatedAt: new Date().toISOString() };
+      setCurrentPlan(updated);
+      onPlanUpdated(updated);
+    },
+    [currentPlan, onPlanUpdated]
+  );
 
   const moveTask = useCallback(
     (direction: 'up' | 'down') => {
@@ -101,15 +115,28 @@ export default function RefineScreen({
     }
 
     if (key.tab) {
-      setViewMode((v) => (v === 'tree' ? 'batch' : 'tree'));
+      setViewMode((v) => {
+        if (v === 'tree') return 'batch';
+        if (v === 'batch') return 'skills';
+        return 'tree';
+      });
     } else if (key.upArrow) {
       setSelectedIndex((i) => Math.max(0, i - 1));
     } else if (key.downArrow) {
-      setSelectedIndex((i) => Math.min(currentPlan.tasks.length - 1, i + 1));
+      if (viewMode === 'skills') {
+        const skills = currentPlan.skills || [];
+        setSelectedIndex((i) => Math.min(skills.length - 1, i + 1));
+      } else {
+        setSelectedIndex((i) => Math.min(currentPlan.tasks.length - 1, i + 1));
+      }
     } else if (ch === '[') {
       moveTask('up');
     } else if (ch === ']') {
       moveTask('down');
+    } else if (ch === ' ' && viewMode === 'skills') {
+      const skills = currentPlan.skills || [];
+      const skill = skills[selectedIndex];
+      if (skill) toggleSkill(skill.name);
     }
   });
 
@@ -133,9 +160,12 @@ export default function RefineScreen({
       setStreamText('');
       setInput('');
 
-      refineWBS(currentPlan.tasks, value, (_delta, fullText) => {
-        setStreamText(fullText);
-      })
+      getSkillOptions()
+        .then((skillOptions) => 
+          refineWBS(currentPlan.tasks, value, (_delta, fullText) => {
+            setStreamText(fullText);
+          }, skillOptions)
+        )
         .then((tasks) => {
           const updated = { ...currentPlan, tasks, updatedAt: new Date().toISOString() };
           setCurrentPlan(updated);
@@ -173,6 +203,10 @@ export default function RefineScreen({
         <Text color={viewMode === 'batch' ? 'green' : 'gray'} bold={viewMode === 'batch'}>
           📦 Batches
         </Text>
+        <Text color="gray"> / </Text>
+        <Text color={viewMode === 'skills' ? 'green' : 'gray'} bold={viewMode === 'skills'}>
+          🎯 Skills
+        </Text>
       </Box>
 
       {cycles.length > 0 && (
@@ -190,8 +224,38 @@ export default function RefineScreen({
         <>
           {viewMode === 'tree' ? (
             <TaskTree tasks={currentPlan.tasks} selectedIndex={selectedIndex} />
-          ) : (
+          ) : viewMode === 'batch' ? (
             <BatchView tasks={currentPlan.tasks} batches={batches} selectedIndex={selectedIndex} />
+          ) : (
+            <Box flexDirection="column" marginBottom={1}>
+              <Box marginBottom={1}>
+                <Text bold color="cyan">Active Skills</Text>
+                {(!currentPlan.skills || currentPlan.skills.length === 0) && (
+                  <Text color="gray"> — no skills configured</Text>
+                )}
+              </Box>
+              {currentPlan.skills && currentPlan.skills.length > 0 ? (
+                currentPlan.skills.map((skill, idx) => (
+                  <Box key={skill.name}>
+                    <Text color={idx === selectedIndex ? 'green' : 'gray'}>
+                      {idx === selectedIndex ? '❯ ' : '  '}
+                    </Text>
+                    <Text color={skill.enabled ? 'green' : 'gray'}>
+                      {skill.enabled ? '✓' : '○'} {skill.name}
+                    </Text>
+                  </Box>
+                ))
+              ) : (
+                <Box marginLeft={2}>
+                  <Text color="gray">No custom skills found in .planeteer/skills/</Text>
+                </Box>
+              )}
+              <Box marginTop={1}>
+                <Text color="gray" italic>
+                  Use ↑↓ to select, [space] to toggle, ⇥ to switch view
+                </Text>
+              </Box>
+            </Box>
           )}
 
           <Box marginTop={1}>
@@ -239,7 +303,10 @@ export default function RefineScreen({
 
       <StatusBar
         screen="Refine"
-        hint="↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/z/x/v/r)  esc: back"
+        hint={viewMode === 'skills' 
+          ? "↑↓: navigate  space: toggle skill  ⇥: view  /: commands  esc: back"
+          : "↑↓: navigate  []: reorder  ⇥: view  ⏎: refine  /: commands (e/s/z/x/v/r)  esc: back"
+        }
       />
     </Box>
   );

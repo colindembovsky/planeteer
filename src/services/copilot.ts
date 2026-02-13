@@ -1,8 +1,8 @@
 import { CopilotClient } from '@github/copilot-sdk';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { ChatMessage } from '../models/plan.js';
+import type { ChatMessage, SkillConfig } from '../models/plan.js';
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 const SKILLS_DIR = join(process.cwd(), '.planeteer', 'skills');
@@ -43,6 +43,56 @@ export async function ensureSkillsDirectory(): Promise<void> {
 /** Get the path to the skills directory */
 export function getSkillsDirectory(): string {
   return SKILLS_DIR;
+}
+
+/** List all skill files in the skills directory */
+export async function listSkillFiles(): Promise<string[]> {
+  try {
+    if (!existsSync(SKILLS_DIR)) {
+      return [];
+    }
+    const files = await readdir(SKILLS_DIR);
+    return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+  } catch (err) {
+    console.error('Error listing skill files:', err);
+    return [];
+  }
+}
+
+/** Load skill configurations from the skills directory */
+export async function loadSkillConfigs(): Promise<SkillConfig[]> {
+  const skillFiles = await listSkillFiles();
+  const skills: SkillConfig[] = [];
+  
+  for (const file of skillFiles) {
+    try {
+      const content = await readFile(join(SKILLS_DIR, file), 'utf-8');
+      // Parse YAML to extract skill name - simple parsing for name field
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+      if (nameMatch) {
+        const name = nameMatch[1]!.trim();
+        skills.push({ name, enabled: true });
+      }
+    } catch (err) {
+      console.error(`Error loading skill file ${file}:`, err);
+      // Graceful degradation - skip malformed files
+    }
+  }
+  
+  return skills;
+}
+
+/** Get skill options for Copilot SDK */
+export async function getSkillOptions(): Promise<SkillOptions> {
+  const skillFiles = await listSkillFiles();
+  
+  if (skillFiles.length === 0) {
+    return {};
+  }
+  
+  return {
+    skillDirectories: [SKILLS_DIR],
+  };
 }
 
 export interface ModelEntry {
