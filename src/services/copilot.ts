@@ -5,9 +5,16 @@ import { existsSync } from 'node:fs';
 import type { ChatMessage } from '../models/plan.js';
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
+const SKILLS_DIR = join(process.cwd(), '.planeteer', 'skills');
 
 interface Settings {
   model?: string;
+  disabledSkills?: string[];
+}
+
+export interface SkillOptions {
+  skillDirectories?: string[];
+  disabledSkills?: string[];
 }
 
 async function loadSettings(): Promise<Settings> {
@@ -24,6 +31,18 @@ async function saveSettings(settings: Settings): Promise<void> {
   const dir = join(process.cwd(), '.planeteer');
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   await writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+}
+
+/** Ensure the skills directory exists */
+export async function ensureSkillsDirectory(): Promise<void> {
+  if (!existsSync(SKILLS_DIR)) {
+    await mkdir(SKILLS_DIR, { recursive: true });
+  }
+}
+
+/** Get the path to the skills directory */
+export function getSkillsDirectory(): string {
+  return SKILLS_DIR;
 }
 
 export interface ModelEntry {
@@ -78,15 +97,38 @@ export function getModelLabel(): string {
 
 let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
+let currentSkillOptions: SkillOptions | null = null;
 
-export async function getClient(): Promise<CopilotClient> {
+export async function getClient(skillOptions?: SkillOptions): Promise<CopilotClient> {
+  // If skill options changed, invalidate the client
+  if (skillOptions && client && currentSkillOptions !== skillOptions) {
+    const optionsChanged = 
+      JSON.stringify(currentSkillOptions?.skillDirectories ?? []) !== JSON.stringify(skillOptions.skillDirectories ?? []) ||
+      JSON.stringify(currentSkillOptions?.disabledSkills ?? []) !== JSON.stringify(skillOptions.disabledSkills ?? []);
+    
+    if (optionsChanged) {
+      await stopClient();
+    }
+  }
+
   if (client) return client;
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
-    const c = new CopilotClient();
+    const options: any = {};
+    
+    if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
+      options.skillDirectories = skillOptions.skillDirectories;
+    }
+    
+    if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
+      options.disabledSkills = skillOptions.disabledSkills;
+    }
+    
+    const c = new CopilotClient(Object.keys(options).length > 0 ? options : undefined);
     await c.start();
     client = c;
+    currentSkillOptions = skillOptions ?? null;
     return c;
   })();
 
@@ -114,10 +156,11 @@ export async function sendPrompt(
   systemPrompt: string,
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
+  skillOptions?: SkillOptions,
 ): Promise<void> {
   let copilot: CopilotClient;
   try {
-    copilot = await getClient();
+    copilot = await getClient(skillOptions);
   } catch (err) {
     callbacks.onError(new Error(`Failed to start Copilot client: ${(err as Error).message}`));
     return;
@@ -176,10 +219,11 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
+  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void; skillOptions?: SkillOptions },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
+  const skillOptions = options?.skillOptions;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -235,6 +279,6 @@ export async function sendPromptSync(
           reject(err);
         }
       },
-    });
+    }, skillOptions);
   });
 }
