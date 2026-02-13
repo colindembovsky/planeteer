@@ -144,7 +144,10 @@ export async function sendPrompt(
   let fullText = '';
   let settled = false;
 
-  // Subscribe to all session events if callback provided
+  // Subscribe to all session events if callback provided.
+  // We capture all events rather than specific types to ensure comprehensive monitoring
+  // of SDK behavior (tool executions, progress updates, token usage, errors, etc.).
+  // The UI layer filters and formats events for display.
   if (callbacks.onSessionEvent) {
     session.on((event) => {
       callbacks.onSessionEvent?.({

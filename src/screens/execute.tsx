@@ -52,9 +52,9 @@ function formatSessionEvent(taskId: string, event: SessionEventData): DisplayEve
       message = `Progress: ${(event.data as { progressMessage?: string }).progressMessage || '...'}`;
       break;
     case 'tool.execution_complete':
-      const complete = event.data as { success?: boolean; toolName?: string; error?: { message?: string } };
-      if (complete.success === false) {
-        message = `Tool failed: ${complete.error?.message || 'unknown error'}`;
+      const completionData = event.data as { success?: boolean; toolName?: string; error?: { message?: string } };
+      if (completionData.success === false) {
+        message = `Tool failed: ${completionData.error?.message || 'unknown error'}`;
         isError = true;
       } else {
         message = `Tool completed successfully`;
@@ -256,7 +256,11 @@ export default function ExecuteScreen({
       },
       onSessionEvent: (taskId, event) => {
         const displayEvent = formatSessionEvent(taskId, event);
-        setEventLog((prev) => [...prev, displayEvent]);
+        // Keep only the most recent 100 events to prevent unbounded memory growth
+        setEventLog((prev) => {
+          const updated = [...prev, displayEvent];
+          return updated.length > 100 ? updated.slice(-100) : updated;
+        });
       },
     }, execOptions);
 
