@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
 import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
+import type { SessionEventData } from '../services/copilot.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
@@ -13,6 +14,14 @@ interface ExecuteScreenProps {
   codebaseContext?: string;
   onDone: (plan: Plan) => void;
   onBack: () => void;
+}
+
+interface DisplayEvent {
+  taskId: string;
+  type: string;
+  timestamp: string;
+  message: string;
+  isError: boolean;
 }
 
 const STATUS_ICON: Record<string, string> = {
@@ -28,6 +37,50 @@ const STATUS_COLOR: Record<string, string> = {
   done: 'green',
   failed: 'red',
 };
+
+// Helper to format session events for display
+function formatSessionEvent(taskId: string, event: SessionEventData): DisplayEvent {
+  const time = new Date(event.timestamp).toLocaleTimeString();
+  let message = '';
+  let isError = false;
+
+  switch (event.type) {
+    case 'tool.execution_start':
+      message = `Tool started: ${(event.data as { toolName?: string }).toolName || 'unknown'}`;
+      break;
+    case 'tool.execution_progress':
+      message = `Progress: ${(event.data as { progressMessage?: string }).progressMessage || '...'}`;
+      break;
+    case 'tool.execution_complete':
+      const completionData = event.data as { success?: boolean; toolName?: string; error?: { message?: string } };
+      if (completionData.success === false) {
+        message = `Tool failed: ${completionData.error?.message || 'unknown error'}`;
+        isError = true;
+      } else {
+        message = `Tool completed successfully`;
+      }
+      break;
+    case 'session.error':
+      message = `Error: ${(event.data as { message?: string }).message || 'unknown error'}`;
+      isError = true;
+      break;
+    case 'assistant.usage':
+      const usage = event.data as { inputTokens?: number; outputTokens?: number; model?: string };
+      message = `Token usage — Model: ${usage.model || 'unknown'}, In: ${usage.inputTokens || 0}, Out: ${usage.outputTokens || 0}`;
+      break;
+    default:
+      // Show other events with minimal formatting
+      message = event.type;
+  }
+
+  return {
+    taskId,
+    type: event.type,
+    timestamp: time,
+    message,
+    isError,
+  };
+}
 
 export default function ExecuteScreen({
   plan,
@@ -46,6 +99,8 @@ export default function ExecuteScreen({
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
   const execHandleRef = useRef<ExecutionHandle | null>(null);
   const [summarized, setSummarized] = useState('');
+  const [eventLog, setEventLog] = useState<DisplayEvent[]>([]);
+  const [showEventLog, setShowEventLog] = useState(false);
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -109,6 +164,10 @@ export default function ExecuteScreen({
         setSummarized(path);
         setTimeout(() => setSummarized(''), 3000);
       });
+    }
+    // Toggle event log
+    if (ch === 'e' && started) {
+      setShowEventLog((prev) => !prev);
     }
     if (key.leftArrow) {
       setViewBatchIndex((i) => Math.max(0, i - 1));
@@ -194,6 +253,14 @@ export default function ExecuteScreen({
           onDone(finalPlan);
         }
         // Otherwise stay on execute screen — user can press 'r' to retry
+      },
+      onSessionEvent: (taskId, event) => {
+        const displayEvent = formatSessionEvent(taskId, event);
+        // Keep only the most recent 100 events to prevent unbounded memory growth
+        setEventLog((prev) => {
+          const updated = [...prev, displayEvent];
+          return updated.length > 100 ? updated.slice(-100) : updated;
+        });
       },
     }, execOptions);
 
@@ -401,17 +468,55 @@ export default function ExecuteScreen({
         </Box>
       )}
 
+      {/* Event Log */}
+      {showEventLog && eventLog.length > 0 && (
+        <Box flexDirection="column" marginBottom={1} borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Box marginBottom={0}>
+            <Text color="cyan" bold>Session Event Log</Text>
+            <Text color="gray"> ({eventLog.length} events)</Text>
+          </Box>
+          {(() => {
+            const maxEvents = 8;
+            const visible = eventLog.slice(-maxEvents);
+            const truncated = eventLog.length > maxEvents;
+            return (
+              <>
+                {truncated && (
+                  <Text color="gray" dimColor>··· {eventLog.length - maxEvents} earlier events ···</Text>
+                )}
+                {visible.map((evt, i) => (
+                  <Box key={i}>
+                    <Text color="gray">[{evt.timestamp}] </Text>
+                    <Text color="cyan">{evt.taskId}: </Text>
+                    <Text color={evt.isError ? 'red' : 'white'}>{evt.message}</Text>
+                  </Box>
+                ))}
+              </>
+            );
+          })()}
+        </Box>
+      )}
+
+      {/* Event log hint */}
+      {started && !showEventLog && eventLog.length > 0 && (
+        <Box marginBottom={1}>
+          <Text color="cyan">Press </Text>
+          <Text color="green" bold>e</Text>
+          <Text color="cyan"> to view session event log ({eventLog.length} events)</Text>
+        </Box>
+      )}
+
       <StatusBar
         screen="Execute"
         hint={
           executing && failedCount > 0
-            ? '←→: switch batch  ↑↓: select task  r: retry task  ⏳ executing...'
+            ? '←→: switch batch  ↑↓: select task  r: retry task  e: events  ⏳ executing...'
             : executing
-              ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
+              ? '←→: switch batch  ↑↓: select task  e: events  ⏳ executing...'
               : started && failedCount > 0
-                ? '←→: switch batch  ↑↓: select task  r: retry  z: summarize  esc: back'
+                ? '←→: switch batch  ↑↓: select task  r: retry  e: events  z: summarize  esc: back'
                 : started
-                  ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
+                  ? '←→: switch batch  ↑↓: select task  e: events  z: summarize  esc: back'
                   : 'x: start  esc: back'
         }
       />

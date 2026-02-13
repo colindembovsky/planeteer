@@ -44,17 +44,21 @@ planeteer list
 1. **Clarify** — Describe your project in natural language. Copilot asks clarifying questions until the scope is clear.
 2. **Breakdown** — Copilot generates a work breakdown structure: tasks with descriptions, acceptance criteria, and dependencies.
 3. **Refine** — Navigate the task tree, edit details, or type refinement requests (e.g., "split the auth task into login and signup"). Press `s` to save, `x` to execute.
-4. **Execute** — Tasks are dispatched to Copilot agents in parallel batches that respect the dependency graph. Progress is shown in real time.
+4. **Execute** — Tasks are dispatched to Copilot agents in parallel batches that respect the dependency graph. Progress is shown in real time. Press `e` during execution to view the session event log, which displays granular feedback including tool executions, progress updates, token usage, and error messages.
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `↑` `↓` | Navigate task list |
+| `←` `→` | Switch batch (execute screen) |
 | `⏎` | Submit input / proceed to next screen |
 | `Esc` | Go back |
 | `s` | Save plan (refine screen) |
 | `x` | Start execution (refine/execute screen) |
+| `r` | Retry failed tasks (execute screen) |
+| `e` | Toggle session event log (execute screen) |
+| `z` | Export summary to markdown (execute screen) |
 | `q` | Quit |
 
 ## Development
@@ -156,6 +160,25 @@ Plans are saved to `.planeteer/` in the current working directory:
 
 - `<plan-id>.json` — Machine-readable plan (used by the app)
 - `<plan-id>.md` — Human-readable Markdown export
+
+## Features
+
+### Real-Time Session Event Monitoring
+
+During task execution, Planeteer subscribes to session events from the Copilot SDK, providing granular visibility into what the AI agents are doing:
+
+- **Tool Executions**: See when tools (bash, file operations, etc.) start and complete
+- **Progress Updates**: View real-time progress messages from agents
+- **Token Usage**: Monitor input/output tokens and associated costs per task
+- **Error Details**: Get actionable error messages when tasks fail
+
+**How to use:**
+1. Start task execution with `x`
+2. Press `e` to toggle the event log panel
+3. The log shows the most recent 8 events with timestamps, task IDs, and messages
+4. Error events are highlighted in red for quick identification
+
+This feature leverages the Copilot SDK's `session.on()` event API to capture events like `tool.execution_start`, `tool.execution_progress`, `tool.execution_complete`, and `session.error`, providing transparency and debugging insights into agent behavior.
 
 ## Project Structure
 

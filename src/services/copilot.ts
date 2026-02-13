@@ -104,10 +104,17 @@ export async function stopClient(): Promise<void> {
   }
 }
 
+export interface SessionEventData {
+  type: string;
+  timestamp: string;
+  data: unknown;
+}
+
 export interface StreamCallbacks {
   onDelta: (text: string) => void;
   onDone: (fullText: string) => void;
   onError: (error: Error) => void;
+  onSessionEvent?: (event: SessionEventData) => void;
 }
 
 export async function sendPrompt(
@@ -136,6 +143,20 @@ export async function sendPrompt(
 
   let fullText = '';
   let settled = false;
+
+  // Subscribe to all session events if callback provided.
+  // We capture all events rather than specific types to ensure comprehensive monitoring
+  // of SDK behavior (tool executions, progress updates, token usage, errors, etc.).
+  // The UI layer filters and formats events for display.
+  if (callbacks.onSessionEvent) {
+    session.on((event) => {
+      callbacks.onSessionEvent?.({
+        type: event.type,
+        timestamp: event.timestamp,
+        data: event.data,
+      });
+    });
+  }
 
   session.on('assistant.message_delta', (event: { data: { deltaContent: string } }) => {
     fullText += event.data.deltaContent;
@@ -176,10 +197,15 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
+  options?: { 
+    timeoutMs?: number; 
+    onDelta?: (delta: string, fullText: string) => void;
+    onSessionEvent?: (event: SessionEventData) => void;
+  },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
+  const onSessionEvent = options?.onSessionEvent;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -235,6 +261,7 @@ export async function sendPromptSync(
           reject(err);
         }
       },
+      onSessionEvent,
     });
   });
 }
