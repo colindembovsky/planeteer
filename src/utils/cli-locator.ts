@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 export interface CliInfo {
   path: string;
@@ -80,8 +80,10 @@ function findBundledCli(): string | null {
  */
 function findSystemCli(): string | null {
   try {
-    const command = process.platform === 'win32' ? 'where copilot' : 'which copilot';
-    const result = execSync(command, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+    const executable = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(executable, ['copilot'], {
+      encoding: 'utf-8',
+    });
     const path = result.trim().split('\n')[0];
     
     if (path && existsSync(path)) {
