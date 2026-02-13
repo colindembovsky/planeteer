@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage } from '../models/plan.js';
-import { locateCopilotCli } from '../utils/cli-locator.js';
+import { locateCopilotCli, type CliInfo } from '../utils/cli-locator.js';
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 
@@ -79,7 +79,7 @@ export function getModelLabel(): string {
 
 let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
-let cliLocation: { path: string; version: string; source: 'bundled' | 'system' } | null = null;
+let cliLocation: CliInfo | null = null;
 
 /** Initialize CLI location info early (doesn't start the client). */
 export function initCliInfo(): void {
@@ -92,7 +92,7 @@ export function initCliInfo(): void {
 }
 
 /** Get information about the CLI being used. */
-export function getCliInfo(): { path: string; version: string; source: 'bundled' | 'system' } | null {
+export function getCliInfo(): CliInfo | null {
   // Initialize on first access if not already done
   if (!cliLocation) {
     initCliInfo();

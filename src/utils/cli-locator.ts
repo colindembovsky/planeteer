@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
-export interface CliLocation {
+export interface CliInfo {
   path: string;
   version: string;
   source: 'bundled' | 'system';
@@ -105,7 +105,7 @@ function getCliVersion(cliPath: string): string {
       timeout: 5000,
     });
     
-    // Parse version from output (e.g., "GitHub Copilot CLI 0.0.403.")
+    // Parse version from output (e.g., "GitHub Copilot CLI 0.0.403")
     const match = result.match(/(\d+\.\d+\.\d+)/);
     return match ? match[1] : 'unknown';
   } catch {
@@ -117,7 +117,7 @@ function getCliVersion(cliPath: string): string {
  * Locate the Copilot CLI binary, checking bundled first, then system.
  * Returns null if no CLI is found.
  */
-export function locateCopilotCli(): CliLocation | null {
+export function locateCopilotCli(): CliInfo | null {
   // Try bundled CLI first
   const bundledPath = findBundledCli();
   if (bundledPath) {
@@ -136,19 +136,18 @@ export function locateCopilotCli(): CliLocation | null {
 }
 
 /**
- * Check if the CLI is authenticated.
- * Returns true if authenticated, false otherwise.
+ * Check if the CLI binary is executable.
+ * Returns true if the binary can be executed, false otherwise.
+ * Note: This does NOT verify authentication status.
  */
-export function checkCliAuthentication(cliPath: string): boolean {
+export function checkCliExecutable(cliPath: string): boolean {
   try {
-    // Run a simple command that requires authentication
+    // Run a simple command to verify the binary is executable
     execSync(`"${cliPath}" --help`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
     });
-    // If --help works, the binary is at least executable
-    // Authentication check would need SDK connection attempt
     return true;
   } catch {
     return false;
