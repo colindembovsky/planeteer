@@ -69,8 +69,8 @@ export async function loadSkillConfigs(): Promise<SkillConfig[]> {
       const content = await readFile(join(SKILLS_DIR, file), 'utf-8');
       // Parse YAML to extract skill name - simple parsing for name field
       const nameMatch = content.match(/^name:\s*(.+)$/m);
-      if (nameMatch) {
-        const name = nameMatch[1]!.trim();
+      if (nameMatch && nameMatch[1]) {
+        const name = nameMatch[1].trim();
         skills.push({ name, enabled: true });
       }
     } catch (err) {
@@ -147,38 +147,15 @@ export function getModelLabel(): string {
 
 let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
-let currentSkillOptions: SkillOptions | null = null;
 
-export async function getClient(skillOptions?: SkillOptions): Promise<CopilotClient> {
-  // If skill options changed, invalidate the client
-  if (skillOptions && client && currentSkillOptions !== skillOptions) {
-    const optionsChanged = 
-      JSON.stringify(currentSkillOptions?.skillDirectories ?? []) !== JSON.stringify(skillOptions.skillDirectories ?? []) ||
-      JSON.stringify(currentSkillOptions?.disabledSkills ?? []) !== JSON.stringify(skillOptions.disabledSkills ?? []);
-    
-    if (optionsChanged) {
-      await stopClient();
-    }
-  }
-
+export async function getClient(): Promise<CopilotClient> {
   if (client) return client;
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
-    const options: any = {};
-    
-    if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
-      options.skillDirectories = skillOptions.skillDirectories;
-    }
-    
-    if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
-      options.disabledSkills = skillOptions.disabledSkills;
-    }
-    
-    const c = new CopilotClient(Object.keys(options).length > 0 ? options : undefined);
+    const c = new CopilotClient();
     await c.start();
     client = c;
-    currentSkillOptions = skillOptions ?? null;
     return c;
   })();
 
@@ -210,7 +187,7 @@ export async function sendPrompt(
 ): Promise<void> {
   let copilot: CopilotClient;
   try {
-    copilot = await getClient(skillOptions);
+    copilot = await getClient();
   } catch (err) {
     callbacks.onError(new Error(`Failed to start Copilot client: ${(err as Error).message}`));
     return;
@@ -218,10 +195,20 @@ export async function sendPrompt(
 
   let session;
   try {
-    session = await copilot.createSession({
+    const sessionConfig: any = {
       model: currentModel,
       streaming: true,
-    });
+    };
+    
+    if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
+      sessionConfig.skillDirectories = skillOptions.skillDirectories;
+    }
+    
+    if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
+      sessionConfig.disabledSkills = skillOptions.disabledSkills;
+    }
+    
+    session = await copilot.createSession(sessionConfig);
   } catch (err) {
     callbacks.onError(new Error(`Failed to create session: ${(err as Error).message}`));
     return;
