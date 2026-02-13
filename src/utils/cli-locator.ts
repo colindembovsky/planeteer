@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 export interface CliInfo {
   path: string;
@@ -99,9 +99,8 @@ function findSystemCli(): string | null {
  */
 function getCliVersion(cliPath: string): string {
   try {
-    const result = execSync(`"${cliPath}" --version`, {
+    const result = execFileSync(cliPath, ['--version'], {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 5000,
     });
     
@@ -143,9 +142,8 @@ export function locateCopilotCli(): CliInfo | null {
 export function checkCliExecutable(cliPath: string): boolean {
   try {
     // Run a simple command to verify the binary is executable
-    execSync(`"${cliPath}" --help`, {
+    execFileSync(cliPath, ['--help'], {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
     });
     return true;
