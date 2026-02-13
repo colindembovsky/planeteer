@@ -81,8 +81,22 @@ let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
 let cliLocation: { path: string; version: string; source: 'bundled' | 'system' } | null = null;
 
+/** Initialize CLI location info early (doesn't start the client). */
+export function initCliInfo(): void {
+  if (!cliLocation) {
+    const location = locateCopilotCli();
+    if (location) {
+      cliLocation = location;
+    }
+  }
+}
+
 /** Get information about the CLI being used. */
 export function getCliInfo(): { path: string; version: string; source: 'bundled' | 'system' } | null {
+  // Initialize on first access if not already done
+  if (!cliLocation) {
+    initCliInfo();
+  }
   return cliLocation;
 }
 
@@ -95,7 +109,12 @@ export async function getClient(): Promise<CopilotClient> {
     const location = locateCopilotCli();
     if (!location) {
       throw new Error(
-        'GitHub Copilot CLI not found. Please install it with: npm install -g @github/copilot'
+        'GitHub Copilot CLI not found.\n\n' +
+        'The bundled CLI should be automatically available, but it appears to be missing.\n' +
+        'Please try:\n' +
+        '  1. Reinstalling dependencies: npm install\n' +
+        '  2. Installing the CLI globally: npm install -g @github/copilot\n\n' +
+        'If the problem persists, please report this issue.'
       );
     }
 
@@ -106,7 +125,23 @@ export async function getClient(): Promise<CopilotClient> {
       cliPath: location.path,
     });
     
-    await c.start();
+    try {
+      await c.start();
+    } catch (err) {
+      const message = (err as Error).message || 'Unknown error';
+      throw new Error(
+        `Failed to start GitHub Copilot CLI.\n\n` +
+        `Error: ${message}\n\n` +
+        `The CLI was found at: ${location.path}\n` +
+        `Version: ${location.version}\n` +
+        `Source: ${location.source}\n\n` +
+        `Please ensure you have:\n` +
+        `  1. Authenticated with GitHub Copilot (the CLI will prompt you)\n` +
+        `  2. Active GitHub Copilot subscription\n` +
+        `  3. Proper permissions to execute the CLI binary`
+      );
+    }
+    
     client = c;
     return c;
   })();

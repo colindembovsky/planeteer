@@ -24,6 +24,16 @@ npm start            # Launch the TUI (home screen)
 
 **Note:** Planeteer bundles the GitHub Copilot CLI automatically. You'll need to authenticate with GitHub Copilot on first use (via GitHub authentication in your browser).
 
+## Features
+
+- **Zero-config CLI**: The GitHub Copilot CLI is bundled with Planeteer — no separate installation needed
+- **Automatic fallback**: Uses bundled CLI by default, falls back to system-installed CLI if available
+- **Version detection**: Displays CLI version and source (bundled vs. system) on the home screen
+- **Multi-turn clarification**: Copilot asks questions to understand your project requirements
+- **Smart work breakdown**: Generates tasks with acceptance criteria and dependency graphs
+- **Parallel execution**: Runs independent tasks simultaneously via Copilot agents
+- **Progress tracking**: Real-time updates on task execution with event logs
+
 ## Usage
 
 ```bash
@@ -158,6 +168,32 @@ Plans are saved to `.planeteer/` in the current working directory:
 - `<plan-id>.json` — Machine-readable plan (used by the app)
 - `<plan-id>.md` — Human-readable Markdown export
 
+## Troubleshooting
+
+### CLI Not Found
+
+If you see "GitHub Copilot CLI not found" errors:
+
+1. **Reinstall dependencies**: `npm install` (ensures bundled CLI is installed)
+2. **Check platform support**: The bundled CLI supports Linux (x64, arm64), macOS (x64, arm64), and Windows (x64, arm64)
+3. **Manual installation**: As a fallback, install globally with `npm install -g @github/copilot`
+
+### Authentication Issues
+
+The Copilot CLI requires GitHub authentication:
+
+1. On first use, you'll be prompted to authenticate via your browser
+2. You need an active GitHub Copilot subscription
+3. If authentication fails, try running `copilot auth` in your terminal
+
+### CLI Version Mismatch
+
+If you experience issues with the bundled CLI:
+
+- Check the CLI version on the home screen (displays as `[bundled CLI vX.X.X]`)
+- The bundled version is tied to `@github/copilot-sdk` version in package.json
+- To use a newer CLI, install it globally: `npm install -g @github/copilot`
+
 ## Project Structure
 
 ```
@@ -181,6 +217,7 @@ src/
 ├── models/
 │   └── plan.ts            # Types: Plan, Task, ChatMessage
 └── utils/
+    ├── cli-locator.ts     # Locate bundled/system Copilot CLI
     ├── dependency-graph.ts # Topological sort & cycle detection
     └── markdown.ts        # Plan → Markdown renderer
 ```
