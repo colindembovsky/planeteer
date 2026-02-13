@@ -32,10 +32,7 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
       setLoaded(true);
     });
     // Load CLI info asynchronously
-    const info = getCliInfo();
-    if (info) {
-      setCliInfo(info);
-    }
+    setCliInfo(getCliInfo());
   }, []);
 
   const items = [

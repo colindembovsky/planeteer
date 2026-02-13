@@ -105,9 +105,11 @@ export async function getClient(): Promise<CopilotClient> {
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
-    // Locate the Copilot CLI binary (bundled or system)
-    const location = locateCopilotCli();
-    if (!location) {
+    // Initialize CLI location if not already done
+    initCliInfo();
+    
+    // Use the cached location
+    if (!cliLocation) {
       throw new Error(
         'GitHub Copilot CLI not found.\n\n' +
         'The bundled CLI should be automatically available, but it appears to be missing.\n' +
@@ -118,11 +120,9 @@ export async function getClient(): Promise<CopilotClient> {
       );
     }
 
-    cliLocation = location;
-
     // Create client with the located CLI path
     const c = new CopilotClient({
-      cliPath: location.path,
+      cliPath: cliLocation.path,
     });
     
     try {
@@ -132,9 +132,9 @@ export async function getClient(): Promise<CopilotClient> {
       throw new Error(
         `Failed to start GitHub Copilot CLI.\n\n` +
         `Error: ${message}\n\n` +
-        `The CLI was found at: ${location.path}\n` +
-        `Version: ${location.version}\n` +
-        `Source: ${location.source}\n\n` +
+        `The CLI was found at: ${cliLocation.path}\n` +
+        `Version: ${cliLocation.version}\n` +
+        `Source: ${cliLocation.source}\n\n` +
         `Please ensure you have:\n` +
         `  1. Authenticated with GitHub Copilot (the CLI will prompt you)\n` +
         `  2. Active GitHub Copilot subscription\n` +
