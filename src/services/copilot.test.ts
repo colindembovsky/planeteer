@@ -46,8 +46,13 @@ describe('Skill Configuration', () => {
   describe('listSkillFiles', () => {
     it('should return empty array when no skill files exist', async () => {
       await ensureSkillsDirectory();
+      // Note: In test environment, example skills may already exist
       const files = await listSkillFiles();
       expect(Array.isArray(files)).toBe(true);
+      // Files should only contain .yaml or .yml extensions
+      files.forEach(file => {
+        expect(file.endsWith('.yaml') || file.endsWith('.yml')).toBe(true);
+      });
     });
 
     it('should list YAML skill files', async () => {

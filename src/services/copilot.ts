@@ -195,7 +195,14 @@ export async function sendPrompt(
 
   let session;
   try {
-    const sessionConfig: any = {
+    interface SessionConfigWithSkills {
+      model: string;
+      streaming: boolean;
+      skillDirectories?: string[];
+      disabledSkills?: string[];
+    }
+    
+    const sessionConfig: SessionConfigWithSkills = {
       model: currentModel,
       streaming: true,
     };

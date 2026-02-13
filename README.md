@@ -164,7 +164,11 @@ examples:
 
 ### Built-in Example
 
-An example web-app skill is included in `.planeteer/skills/example-web-app-skill.yaml` to help you get started.
+Two example skills are included in the repository to help you get started:
+- **example-web-app-skill.yaml** - Web application development best practices
+- **example-data-pipeline-skill.yaml** - ETL and data processing workflow patterns
+
+These files are automatically available in `.planeteer/skills/` and can be used as templates for creating your own custom skills.
 
 ## Development
 
