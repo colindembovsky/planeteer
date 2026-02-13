@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import type { Plan } from '../models/plan.js';
 import { listPlans, loadPlan, summarizePlan } from '../services/persistence.js';
-import { fetchModels, getModel, setModel, getModelLabel, type ModelEntry } from '../services/copilot.js';
+import { fetchModels, getModel, setModel, getModelLabel, getCliInfo, type ModelEntry } from '../services/copilot.js';
 import StatusBar from '../components/status-bar.js';
 
 interface HomeScreenProps {
@@ -23,12 +23,18 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
   const [commandMode, setCommandMode] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [summarized, setSummarized] = useState('');
+  const [cliInfo, setCliInfo] = useState<{ version: string; source: 'bundled' | 'system' } | null>(null);
 
   React.useEffect(() => {
     listPlans().then((plans) => {
       setSavedPlans(plans);
       setLoaded(true);
     });
+    // Load CLI info asynchronously
+    const info = getCliInfo();
+    if (info) {
+      setCliInfo(info);
+    }
   }, []);
 
   const items = [
@@ -113,6 +119,9 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
       <Box marginBottom={1}>
         <Text bold color="green">🌍 Planeteer</Text>
         <Text color="gray"> — AI-powered work breakdown</Text>
+        {cliInfo && (
+          <Text color="dim"> [{cliInfo.source} CLI v{cliInfo.version}]</Text>
+        )}
       </Box>
 
       {showModelPicker ? (

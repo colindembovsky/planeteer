@@ -13,7 +13,6 @@ AI-powered work breakdown and parallel execution TUI. Describe what you want to 
 ## Prerequisites
 
 - **Node.js 22+**
-- **GitHub Copilot CLI** installed and authenticated (`npm install -g @github/copilot && copilot auth`)
 
 ## Quick Start
 
@@ -22,6 +21,8 @@ npm install
 npm run build
 npm start            # Launch the TUI (home screen)
 ```
+
+**Note:** Planeteer bundles the GitHub Copilot CLI automatically. You'll need to authenticate with GitHub Copilot on first use (via GitHub authentication in your browser).
 
 ## Usage
 

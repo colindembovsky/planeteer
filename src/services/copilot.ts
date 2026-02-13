@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage } from '../models/plan.js';
+import { locateCopilotCli } from '../utils/cli-locator.js';
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 
@@ -78,13 +79,33 @@ export function getModelLabel(): string {
 
 let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
+let cliLocation: { path: string; version: string; source: 'bundled' | 'system' } | null = null;
+
+/** Get information about the CLI being used. */
+export function getCliInfo(): { path: string; version: string; source: 'bundled' | 'system' } | null {
+  return cliLocation;
+}
 
 export async function getClient(): Promise<CopilotClient> {
   if (client) return client;
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
-    const c = new CopilotClient();
+    // Locate the Copilot CLI binary (bundled or system)
+    const location = locateCopilotCli();
+    if (!location) {
+      throw new Error(
+        'GitHub Copilot CLI not found. Please install it with: npm install -g @github/copilot'
+      );
+    }
+
+    cliLocation = location;
+
+    // Create client with the located CLI path
+    const c = new CopilotClient({
+      cliPath: location.path,
+    });
+    
     await c.start();
     client = c;
     return c;
