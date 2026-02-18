@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Plan } from '../models/plan.js';
 import { planToMarkdown, planToSummaryMarkdown } from '../utils/markdown.js';
+import { validateEnvVars } from '../utils/env-validation.js';
 
 const PLAN_DIR = '.planeteer';
 
@@ -18,8 +19,25 @@ export async function savePlan(plan: Plan): Promise<void> {
   const dir = await ensureDir();
   plan.updatedAt = new Date().toISOString();
 
+  // Check for sensitive environment variables
+  const allEnvWarnings: string[] = [];
+  for (const task of plan.tasks) {
+    if (task.env) {
+      const warnings = validateEnvVars(task.env);
+      allEnvWarnings.push(...warnings);
+    }
+  }
+
+  // Create a plan object with optional warning comment
+  const planWithWarning = allEnvWarnings.length > 0 
+    ? {
+        _warning: 'This plan contains environment variables. Do not commit sensitive values (API keys, passwords, tokens) to version control.',
+        ...plan,
+      }
+    : plan;
+
   const jsonPath = join(dir, `${plan.id}.json`);
-  await writeFile(jsonPath, JSON.stringify(plan, null, 2), 'utf-8');
+  await writeFile(jsonPath, JSON.stringify(planWithWarning, null, 2), 'utf-8');
 
   const mdPath = join(dir, `${plan.id}.md`);
   await writeFile(mdPath, planToMarkdown(plan), 'utf-8');

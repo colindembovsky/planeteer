@@ -8,6 +8,7 @@ const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 
 interface Settings {
   model?: string;
+  globalEnv?: Record<string, string>;
 }
 
 async function loadSettings(): Promise<Settings> {
@@ -59,6 +60,20 @@ export function setModel(model: string): void {
   saveSettings({ model }).catch(() => {});
 }
 
+let globalEnv: Record<string, string> = {};
+
+export function getGlobalEnv(): Record<string, string> {
+  return { ...globalEnv };
+}
+
+export function setGlobalEnv(env: Record<string, string>): void {
+  globalEnv = { ...env };
+  // Load current settings and merge with new env
+  loadSettings().then(settings => {
+    saveSettings({ ...settings, globalEnv: env }).catch(() => {});
+  }).catch(() => {});
+}
+
 /** Load persisted model preference. Call once at startup. */
 export async function loadModelPreference(): Promise<void> {
   if (settingsLoaded) return;
@@ -66,6 +81,9 @@ export async function loadModelPreference(): Promise<void> {
   const settings = await loadSettings();
   if (settings.model) {
     currentModel = settings.model;
+  }
+  if (settings.globalEnv) {
+    globalEnv = settings.globalEnv;
   }
 }
 
@@ -110,11 +128,24 @@ export interface StreamCallbacks {
   onError: (error: Error) => void;
 }
 
+export interface SendPromptOptions {
+  env?: Record<string, string>;
+}
+
 export async function sendPrompt(
   systemPrompt: string,
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
+  options?: SendPromptOptions,
 ): Promise<void> {
+  // Set environment variables for this session if provided
+  // These will be available to MCP servers spawned by the Copilot CLI
+  if (options?.env) {
+    for (const [key, value] of Object.entries(options.env)) {
+      process.env[key] = value;
+    }
+  }
+
   let copilot: CopilotClient;
   try {
     copilot = await getClient();
@@ -176,7 +207,7 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
+  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void; env?: Record<string, string> },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
@@ -235,6 +266,6 @@ export async function sendPromptSync(
           reject(err);
         }
       },
-    });
+    }, options?.env ? { env: options.env } : undefined);
   });
 }

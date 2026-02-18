@@ -1,6 +1,7 @@
 import type { Plan, Task } from '../models/plan.js';
 import { sendPromptSync } from './copilot.js';
 import { getReadyTasks } from '../utils/dependency-graph.js';
+import { getGlobalEnv } from './copilot.js';
 
 export interface ExecutionCallbacks {
   onTaskStart: (taskId: string) => void;
@@ -106,12 +107,17 @@ export function executePlan(
 
     try {
       const prompt = buildTaskPrompt(task, updatedPlan, codebaseContext);
+      
+      // Merge global env vars with task-specific env vars (task-specific takes precedence)
+      const env = { ...getGlobalEnv(), ...task.env };
+      
       const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
         { role: 'user', content: prompt },
       ], {
         onDelta: (delta, fullText) => {
           callbacks.onTaskDelta(task.id, delta, fullText);
         },
+        env: Object.keys(env).length > 0 ? env : undefined,
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
