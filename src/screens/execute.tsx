@@ -51,7 +51,8 @@ export default function ExecuteScreen({
   const execHandleRef = useRef<ExecutionHandle | null>(null);
   const [summarized, setSummarized] = useState('');
   const [orphanedSessions, setOrphanedSessions] = useState<OrphanedSessionInfo[]>([]);
-  const [recoveryMode, setRecoveryMode] = useState<'pending' | 'resume' | 'fresh' | 'cleanup' | 'none'>('pending');
+  const [recoveryMode, setRecoveryMode] = useState<'pending' | 'cleaning' | 'fresh' | 'none'>('pending');
+  const [recoveryError, setRecoveryError] = useState<string>('');
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -142,6 +143,10 @@ export default function ExecuteScreen({
       if (orphaned.length === 0) {
         setRecoveryMode('none');
       }
+    }).catch((err) => {
+      console.error('Failed to detect orphaned sessions:', err);
+      setRecoveryError(`Failed to detect sessions: ${err instanceof Error ? err.message : String(err)}`);
+      setRecoveryMode('none'); // Proceed anyway
     });
   }, []);
 
@@ -150,24 +155,34 @@ export default function ExecuteScreen({
     if (recoveryMode === 'pending' && orphanedSessions.length > 0) {
       if (ch === '1') {
         // Mark as interrupted and continue
-        setRecoveryMode('fresh');
         const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
         setCurrentPlan(updatedPlan);
         savePlan(updatedPlan).catch(() => {});
+        setRecoveryMode('fresh');
       } else if (ch === '2') {
         // Mark as interrupted and cleanup sessions (recommended)
-        setRecoveryMode('fresh');
+        setRecoveryMode('cleaning');
         cleanupOrphanedSessions(orphanedSessions).then(() => {
           const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
           setCurrentPlan(updatedPlan);
           savePlan(updatedPlan).catch(() => {});
+          setRecoveryMode('fresh');
+        }).catch((err) => {
+          console.error('Failed to cleanup sessions:', err);
+          setRecoveryError(`Cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+          setRecoveryMode('fresh'); // Proceed anyway
         });
       } else if (ch === '3') {
         // Cleanup and go back
+        setRecoveryMode('cleaning');
         cleanupOrphanedSessions(orphanedSessions).then(() => {
           const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
           savePlan(updatedPlan).catch(() => {});
           onBack();
+        }).catch((err) => {
+          console.error('Failed to cleanup sessions:', err);
+          setRecoveryError(`Cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+          onBack(); // Go back anyway
         });
       }
     }
@@ -294,6 +309,20 @@ export default function ExecuteScreen({
       </Box>
 
       {/* Session Recovery UI */}
+      {recoveryMode === 'cleaning' && (
+        <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="yellow" padding={1}>
+          <Box marginBottom={1}>
+            <Spinner label="Cleaning up orphaned sessions..." />
+          </Box>
+        </Box>
+      )}
+
+      {recoveryError && (
+        <Box marginBottom={1}>
+          <Text color="red">⚠ {recoveryError}</Text>
+        </Box>
+      )}
+
       {recoveryMode === 'pending' && orphanedSessions.length > 0 && (
         <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="yellow" padding={1}>
           <Box marginBottom={1}>
