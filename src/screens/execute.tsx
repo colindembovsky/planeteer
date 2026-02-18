@@ -198,24 +198,28 @@ export default function ExecuteScreen({
         // Otherwise stay on execute screen — user can press 'r' to retry
       },
       onSessionEvent: (eventWithTask) => {
-        // Store session events (bounded to prevent memory growth)
-        setSessionEvents((prev) => {
-          const updated = [...prev, eventWithTask];
-          return updated.slice(-100); // Keep last 100 events
-        });
+        const { event, taskId } = eventWithTask;
 
-        // Track context changes for each task
-        if (eventWithTask.event.type === 'session.context_changed') {
-          const { cwd, repository, branch } = eventWithTask.event.data;
+        // Only store session events that we actually render / use, and keep history bounded
+        if (event.type === 'session.context_changed') {
+          const { cwd, repository, branch } = event.data;
+          setSessionEvents((prev) => {
+            const updated = [...prev, eventWithTask];
+            return updated.slice(-100); // Keep last 100 events
+          });
           setTaskContexts((prev) => ({
             ...prev,
-            [eventWithTask.taskId]: { cwd, repository, branch },
+            [taskId]: { cwd, repository, branch },
           }));
-        } else if (eventWithTask.event.type === 'session.start' && eventWithTask.event.data.context) {
-          const { cwd, repository, branch } = eventWithTask.event.data.context;
+        } else if (event.type === 'session.start' && event.data.context) {
+          const { cwd, repository, branch } = event.data.context;
+          setSessionEvents((prev) => {
+            const updated = [...prev, eventWithTask];
+            return updated.slice(-100); // Keep last 100 events
+          });
           setTaskContexts((prev) => ({
             ...prev,
-            [eventWithTask.taskId]: { cwd, repository, branch },
+            [taskId]: { cwd, repository, branch },
           }));
         }
       },
