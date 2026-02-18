@@ -1,8 +1,12 @@
 import { CopilotClient } from '@github/copilot-sdk';
+import type { SessionEvent } from '@github/copilot-sdk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage } from '../models/plan.js';
+
+// Re-export SessionEvent for use in other modules
+export type { SessionEvent };
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 
@@ -108,6 +112,7 @@ export interface StreamCallbacks {
   onDelta: (text: string) => void;
   onDone: (fullText: string) => void;
   onError: (error: Error) => void;
+  onSessionEvent?: (event: SessionEvent) => void;
 }
 
 export async function sendPrompt(
@@ -136,6 +141,13 @@ export async function sendPrompt(
 
   let fullText = '';
   let settled = false;
+
+  // Listen for all session events if callback provided
+  if (callbacks.onSessionEvent) {
+    session.on((event) => {
+      callbacks.onSessionEvent?.(event);
+    });
+  }
 
   session.on('assistant.message_delta', (event: { data: { deltaContent: string } }) => {
     fullText += event.data.deltaContent;
@@ -176,10 +188,15 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
+  options?: { 
+    timeoutMs?: number; 
+    onDelta?: (delta: string, fullText: string) => void;
+    onSessionEvent?: (event: SessionEvent) => void;
+  },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
+  const onSessionEvent = options?.onSessionEvent;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -235,6 +252,7 @@ export async function sendPromptSync(
           reject(err);
         }
       },
+      onSessionEvent,
     });
   });
 }

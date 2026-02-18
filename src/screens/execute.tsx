@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
-import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
+import type { ExecutionOptions, ExecutionHandle, SessionEventWithTask } from '../services/executor.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
@@ -46,6 +46,8 @@ export default function ExecuteScreen({
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
   const execHandleRef = useRef<ExecutionHandle | null>(null);
   const [summarized, setSummarized] = useState('');
+  const [sessionEvents, setSessionEvents] = useState<SessionEventWithTask[]>([]);
+  const [taskContexts, setTaskContexts] = useState<Record<string, { cwd?: string; repository?: string; branch?: string }>>({});
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -195,6 +197,28 @@ export default function ExecuteScreen({
         }
         // Otherwise stay on execute screen — user can press 'r' to retry
       },
+      onSessionEvent: (eventWithTask) => {
+        // Store session events (bounded to prevent memory growth)
+        setSessionEvents((prev) => {
+          const updated = [...prev, eventWithTask];
+          return updated.slice(-100); // Keep last 100 events
+        });
+
+        // Track context changes for each task
+        if (eventWithTask.event.type === 'session.context_changed') {
+          const { cwd, repository, branch } = eventWithTask.event.data;
+          setTaskContexts((prev) => ({
+            ...prev,
+            [eventWithTask.taskId]: { cwd, repository, branch },
+          }));
+        } else if (eventWithTask.event.type === 'session.start' && eventWithTask.event.data.context) {
+          const { cwd, repository, branch } = eventWithTask.event.data.context;
+          setTaskContexts((prev) => ({
+            ...prev,
+            [eventWithTask.taskId]: { cwd, repository, branch },
+          }));
+        }
+      },
     }, execOptions);
 
     execHandleRef.current = handle;
@@ -318,18 +342,29 @@ export default function ExecuteScreen({
             const isSelected = i === selectedTaskIndex;
             const icon = STATUS_ICON[task.status] ?? '?';
             const color = STATUS_COLOR[task.status] ?? 'gray';
+            const context = taskContexts[task.id];
             return (
-              <Box key={task.id}>
-                <Text color={isSelected ? 'white' : 'gray'}>{isSelected ? '❯ ' : '  '}</Text>
-                <Text color={color}>{icon} </Text>
-                <Text color={isSelected ? 'white' : color} bold={isSelected}>
-                  {task.id}
-                </Text>
-                <Text color="gray"> — {task.title}</Text>
-                {task.status === 'in_progress' && (
-                  <Text color="yellow"> </Text>
+              <Box key={task.id} flexDirection="column">
+                <Box>
+                  <Text color={isSelected ? 'white' : 'gray'}>{isSelected ? '❯ ' : '  '}</Text>
+                  <Text color={color}>{icon} </Text>
+                  <Text color={isSelected ? 'white' : color} bold={isSelected}>
+                    {task.id}
+                  </Text>
+                  <Text color="gray"> — {task.title}</Text>
+                  {task.status === 'in_progress' && (
+                    <Text color="yellow"> </Text>
+                  )}
+                  {task.status === 'in_progress' && <Spinner />}
+                </Box>
+                {context?.cwd && (
+                  <Box marginLeft={4}>
+                    <Text color="cyan" dimColor>📁 {context.cwd}</Text>
+                    {context.repository && (
+                      <Text color="blue" dimColor> ({context.repository})</Text>
+                    )}
+                  </Box>
                 )}
-                {task.status === 'in_progress' && <Spinner />}
               </Box>
             );
           })}
@@ -375,6 +410,32 @@ export default function ExecuteScreen({
           <Spinner label={`Waiting for output from ${selectedTask.id}`} showElapsed />
         </Box>
       )}
+
+      {/* Context change events for selected task */}
+      {started && selectedTask && (() => {
+        const taskEvents = sessionEvents.filter(
+          (e) => e.taskId === selectedTask.id && e.event.type === 'session.context_changed'
+        );
+        if (taskEvents.length === 0) return null;
+        
+        return (
+          <Box flexDirection="column" marginLeft={1} marginBottom={1}>
+            <Text color="cyan" bold>Context Changes:</Text>
+            {taskEvents.slice(-3).map((e) => {
+              if (e.event.type !== 'session.context_changed') return null;
+              const time = new Date(e.event.timestamp).toLocaleTimeString();
+              const { cwd, repository, branch } = e.event.data;
+              return (
+                <Box key={e.event.id}>
+                  <Text color="gray">{time} </Text>
+                  <Text color="cyan">→ {cwd}</Text>
+                  {repository && <Text color="blue"> ({repository}{branch ? `@${branch}` : ''})</Text>}
+                </Box>
+              );
+            })}
+          </Box>
+        );
+      })()}
 
       {/* Retry prompt when there are failures */}
       {started && !executing && failedCount > 0 && (
