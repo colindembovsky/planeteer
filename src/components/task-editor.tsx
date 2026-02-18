@@ -3,13 +3,14 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { Task } from '../models/plan.js';
 
-type EditField = 'title' | 'description' | 'acceptance' | 'dependsOn';
+type EditField = 'title' | 'description' | 'acceptance' | 'dependsOn' | 'env';
 
 const FIELDS: { key: EditField; label: string }[] = [
   { key: 'title', label: 'Title' },
   { key: 'description', label: 'Description' },
   { key: 'acceptance', label: 'Acceptance Criteria' },
   { key: 'dependsOn', label: 'Dependencies' },
+  { key: 'env', label: 'Environment Variables' },
 ];
 
 interface TaskEditorProps {
@@ -29,6 +30,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
   const [description, setDescription] = useState(task.description);
   const [acceptanceCriteria, setAcceptanceCriteria] = useState([...task.acceptanceCriteria]);
   const [dependsOn, setDependsOn] = useState([...task.dependsOn]);
+  const [env, setEnv] = useState<Record<string, string>>(task.env || {});
 
   // For acceptance criteria editing
   const [acIndex, setAcIndex] = useState(0);
@@ -65,6 +67,11 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
         }
       } else if (field === 'dependsOn') {
         setEditValue(dependsOn.join(', '));
+        setEditing(true);
+      } else if (field === 'env') {
+        // Format env vars as KEY=VALUE pairs, one per line
+        const envStr = Object.entries(env).map(([k, v]) => `${k}=${v}`).join(', ');
+        setEditValue(envStr);
         setEditing(true);
       }
       return;
@@ -108,6 +115,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
     let newDescription = description;
     let newAcceptanceCriteria = acceptanceCriteria;
     let newDependsOn = dependsOn;
+    let newEnv = env;
 
     if (field === 'title') {
       newTitle = value;
@@ -137,6 +145,21 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
         .filter((d) => d && allTaskIds.includes(d) && d !== task.id);
       newDependsOn = deps;
       setDependsOn(deps);
+    } else if (field === 'env') {
+      // Parse KEY=VALUE pairs separated by commas
+      const pairs = value
+        .split(',')
+        .map((pair) => pair.trim())
+        .filter((pair) => pair.includes('='));
+      const parsed: Record<string, string> = {};
+      for (const pair of pairs) {
+        const [key, ...valueParts] = pair.split('=');
+        if (key && valueParts.length > 0) {
+          parsed[key.trim()] = valueParts.join('=').trim();
+        }
+      }
+      newEnv = parsed;
+      setEnv(parsed);
     }
 
     setEditing(false);
@@ -149,6 +172,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
       description: newDescription,
       acceptanceCriteria: newAcceptanceCriteria,
       dependsOn: newDependsOn,
+      env: Object.keys(newEnv).length > 0 ? newEnv : undefined,
     });
   };
 
@@ -240,6 +264,37 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
                 <TextInput value={editValue} onChange={setEditValue} onSubmit={handleEditSubmit} />
               ) : (
                 <Text>{dependsOn.length > 0 ? dependsOn.join(', ') : '(none)'}</Text>
+              )}
+            </Box>
+          );
+        }
+
+        if (field.key === 'env') {
+          // Helper to mask sensitive values
+          const maskValue = (key: string, value: string): string => {
+            const sensitiveKeys = ['key', 'token', 'password', 'secret', 'auth', 'credential'];
+            const isSensitive = sensitiveKeys.some(k => key.toLowerCase().includes(k));
+            return isSensitive ? '***' : value;
+          };
+
+          const envEntries = Object.entries(env);
+          return (
+            <Box key={field.key}>
+              <Text color={isActive ? 'green' : 'gray'}>{indicator}</Text>
+              <Text color="cyan" bold>{field.label}: </Text>
+              {editing && isActive ? (
+                <TextInput 
+                  value={editValue} 
+                  onChange={setEditValue} 
+                  onSubmit={handleEditSubmit}
+                  placeholder="KEY=value, API_KEY=secret"
+                />
+              ) : (
+                <Text>
+                  {envEntries.length > 0 
+                    ? envEntries.map(([k, v]) => `${k}=${maskValue(k, v)}`).join(', ') 
+                    : '(none)'}
+                </Text>
               )}
             </Box>
           );

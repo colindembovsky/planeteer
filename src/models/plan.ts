@@ -8,6 +8,7 @@ export interface Task {
   dependsOn: string[];
   status: TaskStatus;
   agentResult?: string;
+  env?: Record<string, string>;
 }
 
 export interface Plan {
