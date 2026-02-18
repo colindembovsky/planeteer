@@ -33,7 +33,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const script = JSON.parse(await readFile(args[1], 'utf8')) as {
+    let script: {
       initialScreen?: Screen;
       initialPlanId?: string;
       steps: { input: string; waitMs?: number }[];
@@ -41,6 +41,11 @@ async function main(): Promise<void> {
       height?: number;
       settleMs?: number;
     };
+    try {
+      script = JSON.parse(await readFile(args[1], 'utf8')) as typeof script;
+    } catch {
+      throw new Error(`Invalid JSON in simulation script file: ${args[1]}`);
+    }
 
     const result = await simulateSession(
       React.createElement(App, {

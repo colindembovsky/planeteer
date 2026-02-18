@@ -67,17 +67,18 @@ vi.mock('../services/planner.js', () => ({
 
 vi.mock('../services/executor.js', () => ({
   executePlan: vi.fn((plan: Plan, callbacks: Record<string, (...args: unknown[]) => void>) => {
+    const completedPlan: Plan = {
+      ...plan,
+      tasks: plan.tasks.map((t) => ({ ...t, status: 'done' as const })),
+    };
     callbacks.onTaskStart?.('project-init');
     callbacks.onTaskDone?.('project-init', 'Init complete');
     for (const task of plan.tasks) {
       callbacks.onTaskStart?.(task.id);
       callbacks.onTaskDone?.(task.id, `Done: ${task.id}`);
     }
-    callbacks.onAllDone?.({
-      ...plan,
-      tasks: plan.tasks.map((t) => ({ ...t, status: 'done' as const })),
-    });
-    return { retryTask: vi.fn() };
+    callbacks.onAllDone?.(completedPlan);
+    return { retryTask: vi.fn(), done: Promise.resolve(completedPlan) };
   }),
 }));
 
