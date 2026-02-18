@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Plan, Task } from '../models/plan.js';
 import type { ExecutionCallbacks, SessionEventWithTask } from './executor.js';
 import type { SessionEvent } from './copilot.js';
 
