@@ -20,6 +20,7 @@ const STATUS_ICON: Record<string, string> = {
   in_progress: '◉',
   done: '✓',
   failed: '✗',
+  interrupted: '⊗',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -27,6 +28,7 @@ const STATUS_COLOR: Record<string, string> = {
   in_progress: 'yellow',
   done: 'green',
   failed: 'red',
+  interrupted: 'magenta',
 };
 
 export default function ExecuteScreen({
@@ -194,6 +196,12 @@ export default function ExecuteScreen({
           onDone(finalPlan);
         }
         // Otherwise stay on execute screen — user can press 'r' to retry
+      },
+      onPlanUpdate: (updatedPlan) => {
+        // Incremental save after each task completes or fails
+        savePlan(updatedPlan).catch(() => {
+          // Ignore save errors during execution to avoid breaking the flow
+        });
       },
     }, execOptions);
 

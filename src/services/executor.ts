@@ -9,6 +9,7 @@ export interface ExecutionCallbacks {
   onTaskFailed: (taskId: string, error: string) => void;
   onBatchComplete: (batchIndex: number) => void;
   onAllDone: (plan: Plan) => void;
+  onPlanUpdate?: (plan: Plan) => void;
 }
 
 function buildTaskPrompt(task: Task, plan: Plan, codebaseContext?: string): string {
@@ -106,7 +107,7 @@ export function executePlan(
 
     try {
       const prompt = buildTaskPrompt(task, updatedPlan, codebaseContext);
-      const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+      const { result, sessionId } = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
         { role: 'user', content: prompt },
       ], {
         onDelta: (delta, fullText) => {
@@ -115,11 +116,14 @@ export function executePlan(
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
+      taskInPlan.sessionId = sessionId;
       callbacks.onTaskDone(task.id, result);
+      callbacks.onPlanUpdate?.(updatedPlan);
     } catch (err) {
       taskInPlan.status = 'failed';
       taskInPlan.agentResult = err instanceof Error ? err.message : String(err);
       callbacks.onTaskFailed(task.id, taskInPlan.agentResult!);
+      callbacks.onPlanUpdate?.(updatedPlan);
     }
   }
 
@@ -174,7 +178,7 @@ export function executePlan(
       callbacks.onTaskStart(INIT_TASK_ID);
       try {
         const initPrompt = buildInitPrompt(updatedPlan);
-        const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+        const { result: initResult } = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
           { role: 'user', content: initPrompt },
         ], {
           onDelta: (delta, fullText) => {

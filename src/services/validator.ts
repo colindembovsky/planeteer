@@ -152,7 +152,7 @@ export async function validatePlan(
 
     try {
       const prompt = buildValidationPrompt(task, plan);
-      const result = await sendPromptSync(VALIDATOR_SYSTEM_PROMPT, [
+      const { result } = await sendPromptSync(VALIDATOR_SYSTEM_PROMPT, [
         { role: 'user', content: prompt },
       ], {
         onDelta: (delta, fullText) => {

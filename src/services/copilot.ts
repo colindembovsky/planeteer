@@ -106,7 +106,7 @@ export async function stopClient(): Promise<void> {
 
 export interface StreamCallbacks {
   onDelta: (text: string) => void;
-  onDone: (fullText: string) => void;
+  onDone: (fullText: string, sessionId: string) => void;
   onError: (error: Error) => void;
 }
 
@@ -145,7 +145,7 @@ export async function sendPrompt(
   session.on('session.idle', () => {
     if (settled) return;
     settled = true;
-    callbacks.onDone(fullText);
+    callbacks.onDone(fullText, session.sessionId);
   });
 
   session.on('session.error', (event: { data: { message: string } }) => {
@@ -177,7 +177,7 @@ export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
   options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
-): Promise<string> {
+): Promise<{ result: string; sessionId: string }> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
 
@@ -195,7 +195,8 @@ export async function sendPromptSync(
         settled = true;
         if (accumulated.length > 0) {
           // We have partial content — resolve with what we got
-          resolve(accumulated);
+          // Note: sessionId is not available in timeout case, we'll set it to empty string
+          reject(new Error('Session timed out without completion'));
         } else {
           reject(new Error(`Request timed out after ${Math.round(idleTimeoutMs / 1000)}s of inactivity — the model may be overloaded. Try again or switch to a different model.`));
         }
@@ -213,11 +214,11 @@ export async function sendPromptSync(
         // Reset idle timer — only times out if no new deltas arrive
         startIdleTimer();
       },
-      onDone: (text) => {
+      onDone: (text, sessionId) => {
         if (!settled) {
           settled = true;
           if (timer) clearTimeout(timer);
-          resolve(text);
+          resolve({ result: text, sessionId });
         }
       },
       onError: (err) => {
@@ -228,7 +229,8 @@ export async function sendPromptSync(
         if (accumulated.length > 0 && recentlyActive) {
           settled = true;
           if (timer) clearTimeout(timer);
-          resolve(accumulated);
+          // We don't have sessionId in error case, reject instead
+          reject(err);
         } else {
           settled = true;
           if (timer) clearTimeout(timer);
@@ -237,4 +239,22 @@ export async function sendPromptSync(
       },
     });
   });
+}
+
+/** List all available Copilot sessions */
+export async function listSessions(): Promise<Array<{ sessionId: string; startTime: Date; modifiedTime: Date; summary?: string }>> {
+  const c = await getClient();
+  return c.listSessions();
+}
+
+/** Delete a Copilot session by ID */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const c = await getClient();
+  await c.deleteSession(sessionId);
+}
+
+/** Resume an existing Copilot session by ID */
+export async function resumeSession(sessionId: string): Promise<any> {
+  const c = await getClient();
+  return c.resumeSession(sessionId);
 }
