@@ -66,7 +66,7 @@ Planeteer supports custom Copilot skills for domain-specific planning. Skills he
 
 ### Using Skills
 
-Skills are automatically loaded from the `.planeteer/skills/` directory. On first run, this directory is created with an example skill. To use skills:
+Skills are automatically loaded from the `.github/skills/` directory. On first run, this directory is created with example skills. To use skills:
 
 1. View active skills in the **Refine** screen by pressing `⇥` to cycle to the Skills view
 2. Use `↑`/`↓` to navigate and `Space` to toggle skills on/off
@@ -74,7 +74,7 @@ Skills are automatically loaded from the `.planeteer/skills/` directory. On firs
 
 ### Creating Skills
 
-Create a new YAML file in `.planeteer/skills/` with this structure:
+Create a new YAML file in `.github/skills/` with this structure:
 
 ```yaml
 name: my-custom-skill
@@ -168,7 +168,7 @@ Two example skills are included in the repository to help you get started:
 - **example-web-app-skill.yaml** - Web application development best practices
 - **example-data-pipeline-skill.yaml** - ETL and data processing workflow patterns
 
-These files are automatically available in `.planeteer/skills/` and can be used as templates for creating your own custom skills.
+These files are automatically available in `.github/skills/` and can be used as templates for creating your own custom skills.
 
 ## Development
 

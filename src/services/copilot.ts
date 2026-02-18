@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import type { ChatMessage, SkillConfig } from '../models/plan.js';
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
-const SKILLS_DIR = join(process.cwd(), '.planeteer', 'skills');
+const SKILLS_DIR = join(process.cwd(), '.github', 'skills');
 
 interface Settings {
   model?: string;

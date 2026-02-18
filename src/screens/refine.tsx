@@ -247,7 +247,7 @@ export default function RefineScreen({
                 ))
               ) : (
                 <Box marginLeft={2}>
-                  <Text color="gray">No custom skills found in .planeteer/skills/</Text>
+                  <Text color="gray">No custom skills found in .github/skills/</Text>
                 </Box>
               )}
               <Box marginTop={1}>
