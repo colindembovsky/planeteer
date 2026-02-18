@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage } from '../models/plan.js';
+import { locateCopilotCli, type CliInfo } from '../utils/cli-locator.js';
 
 // Re-export SessionEvent for use in other modules
 export type { SessionEvent };
@@ -82,14 +83,69 @@ export function getModelLabel(): string {
 
 let client: CopilotClient | null = null;
 let clientPromise: Promise<CopilotClient> | null = null;
+let cliLocation: CliInfo | null = null;
+
+/** Initialize CLI location info early (doesn't start the client). */
+export function initCliInfo(): void {
+  if (!cliLocation) {
+    const location = locateCopilotCli();
+    if (location) {
+      cliLocation = location;
+    }
+  }
+}
+
+/** Get information about the CLI being used. */
+export function getCliInfo(): CliInfo | null {
+  // Initialize on first access if not already done
+  if (!cliLocation) {
+    initCliInfo();
+  }
+  return cliLocation;
+}
 
 export async function getClient(): Promise<CopilotClient> {
   if (client) return client;
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
-    const c = new CopilotClient();
-    await c.start();
+    // Initialize CLI location if not already done
+    initCliInfo();
+    
+    // Use the cached location
+    if (!cliLocation) {
+      throw new Error(
+        'GitHub Copilot CLI not found.\n\n' +
+        'The bundled CLI should be automatically available, but it appears to be missing.\n' +
+        'Please try:\n' +
+        '  1. Reinstalling dependencies: npm install\n' +
+        '  2. Installing the CLI globally: npm install -g @github/copilot\n\n' +
+        'If the problem persists, please report this issue.'
+      );
+    }
+
+    // Create client with the located CLI path
+    const c = new CopilotClient({
+      cliPath: cliLocation.path,
+    });
+    
+    try {
+      await c.start();
+    } catch (err) {
+      const message = (err as Error).message || 'Unknown error';
+      throw new Error(
+        `Failed to start GitHub Copilot CLI.\n\n` +
+        `Error: ${message}\n\n` +
+        `The CLI was found at: ${cliLocation.path}\n` +
+        `Version: ${cliLocation.version}\n` +
+        `Source: ${cliLocation.source}\n\n` +
+        `Please ensure you have:\n` +
+        `  1. Authenticated with GitHub Copilot (the CLI will prompt you)\n` +
+        `  2. Active GitHub Copilot subscription\n` +
+        `  3. Proper permissions to execute the CLI binary`
+      );
+    }
+    
     client = c;
     return c;
   })();
