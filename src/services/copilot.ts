@@ -142,9 +142,13 @@ export async function sendPrompt(
   let fullText = '';
   let settled = false;
 
-  // Listen for all session events if callback provided
+  // Listen for session events if callback provided, but avoid forwarding
+  // high-volume delta events that are already handled by onDelta.
   if (callbacks.onSessionEvent) {
-    session.on((event) => {
+    session.on((event: SessionEvent) => {
+      if (event.type === 'assistant.message_delta') {
+        return;
+      }
       callbacks.onSessionEvent?.(event);
     });
   }
