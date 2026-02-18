@@ -127,7 +127,7 @@ export async function inspectCodebase(root?: string): Promise<CodebaseSnapshot> 
 
   // 5. Ask Copilot to analyze
   try {
-    const summary = await sendPromptSync(ANALYSIS_SYSTEM_PROMPT, [
+    const { result: summary } = await sendPromptSync(ANALYSIS_SYSTEM_PROMPT, [
       { role: 'user', content: userPrompt },
     ], { timeoutMs: 60_000 });
 

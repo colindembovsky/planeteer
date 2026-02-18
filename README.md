@@ -157,6 +157,36 @@ Plans are saved to `.planeteer/` in the current working directory:
 - `<plan-id>.json` — Machine-readable plan (used by the app)
 - `<plan-id>.md` — Human-readable Markdown export
 
+#### Session Persistence and Recovery
+
+Planeteer includes robust session persistence to handle interrupted executions:
+
+**Automatic Session Tracking**
+- Each task execution creates a Copilot SDK session
+- Session IDs are stored in the plan JSON and saved incrementally after each task completes or fails
+- If the app crashes or is interrupted (Ctrl+C), sessions remain active in the Copilot CLI
+
+**Orphaned Session Detection**
+- When loading a plan, Planeteer detects tasks that were interrupted (status: `in_progress` with session IDs)
+- It queries the Copilot SDK to find any sessions still active for those tasks
+- If orphaned sessions are found, you'll see a recovery prompt with options:
+  1. **Mark as interrupted and continue** — Keeps sessions alive for debugging
+  2. **Mark as interrupted and cleanup sessions** (recommended) — Cleans up orphaned sessions
+  3. **Cleanup sessions and go back** — Cleans up and returns to the refine screen
+
+**Task Statuses**
+- `pending` — Not yet started
+- `in_progress` — Currently executing
+- `done` — Completed successfully
+- `failed` — Execution failed (can be retried with `r`)
+- `interrupted` — Was in progress when execution was interrupted
+
+**Benefits**
+- **Crash recovery**: Resume work after unexpected crashes or network issues
+- **Resource management**: Prevents accumulation of orphaned Copilot sessions
+- **Debugging**: Inspect failed executions and retry specific tasks
+- **Long-running executions**: For plans with many tasks, safely stop and resume across multiple sessions
+
 ## Project Structure
 
 ```
@@ -176,7 +206,8 @@ src/
 │   ├── copilot.ts         # Copilot SDK wrapper (single point of contact)
 │   ├── planner.ts         # Prompt engineering for planning
 │   ├── executor.ts        # DAG-aware parallel task dispatch
-│   └── persistence.ts     # JSON/Markdown save & load
+│   ├── persistence.ts     # JSON/Markdown save & load
+│   └── session-recovery.ts # Orphaned session detection & cleanup
 ├── models/
 │   └── plan.ts            # Types: Plan, Task, ChatMessage
 └── utils/

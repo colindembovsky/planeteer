@@ -1,4 +1,4 @@
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'failed';
+export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'interrupted';
 
 export interface Task {
   id: string;
@@ -8,6 +8,7 @@ export interface Task {
   dependsOn: string[];
   status: TaskStatus;
   agentResult?: string;
+  sessionId?: string;
 }
 
 export interface Plan {

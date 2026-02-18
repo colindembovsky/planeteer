@@ -140,7 +140,7 @@ export async function generateWBS(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
+      const { result } = await sendPromptSync(WBS_SYSTEM_PROMPT, [
         { role: 'user', content: userContent },
       ], { onDelta });
 
@@ -168,7 +168,7 @@ export async function refineWBS(
   refinementRequest: string,
   onDelta?: (delta: string, fullText: string) => void,
 ): Promise<Task[]> {
-  const result = await sendPromptSync(REFINE_SYSTEM_PROMPT, [
+  const { result } = await sendPromptSync(REFINE_SYSTEM_PROMPT, [
     {
       role: 'user',
       content: `Current tasks:\n${JSON.stringify(currentTasks, null, 2)}\n\nRefinement request: ${refinementRequest}`,
