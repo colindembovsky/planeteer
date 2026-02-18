@@ -5,6 +5,8 @@ import { executePlan } from '../services/executor.js';
 import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
+import { detectOrphanedSessions, cleanupOrphanedSessions, markTasksAsInterrupted } from '../services/session-recovery.js';
+import type { OrphanedSessionInfo } from '../services/session-recovery.js';
 import Spinner from '../components/spinner.js';
 import StatusBar from '../components/status-bar.js';
 
@@ -48,6 +50,8 @@ export default function ExecuteScreen({
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
   const execHandleRef = useRef<ExecutionHandle | null>(null);
   const [summarized, setSummarized] = useState('');
+  const [orphanedSessions, setOrphanedSessions] = useState<OrphanedSessionInfo[]>([]);
+  const [recoveryMode, setRecoveryMode] = useState<'pending' | 'resume' | 'fresh' | 'cleanup' | 'none'>('pending');
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -127,6 +131,44 @@ export default function ExecuteScreen({
       } else {
         const batchTasks = batches[viewBatchIndex - 1] ?? [];
         setSelectedTaskIndex((i) => Math.min(batchTasks.length - 1, i + 1));
+      }
+    }
+  });
+
+  // Detect orphaned sessions on mount
+  useEffect(() => {
+    detectOrphanedSessions(currentPlan).then((orphaned) => {
+      setOrphanedSessions(orphaned);
+      if (orphaned.length === 0) {
+        setRecoveryMode('none');
+      }
+    });
+  }, []);
+
+  // Handle recovery mode selection
+  useInput((ch) => {
+    if (recoveryMode === 'pending' && orphanedSessions.length > 0) {
+      if (ch === '1') {
+        // Mark as interrupted and continue
+        setRecoveryMode('fresh');
+        const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
+        setCurrentPlan(updatedPlan);
+        savePlan(updatedPlan).catch(() => {});
+      } else if (ch === '2') {
+        // Mark as interrupted and cleanup sessions (recommended)
+        setRecoveryMode('fresh');
+        cleanupOrphanedSessions(orphanedSessions).then(() => {
+          const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
+          setCurrentPlan(updatedPlan);
+          savePlan(updatedPlan).catch(() => {});
+        });
+      } else if (ch === '3') {
+        // Cleanup and go back
+        cleanupOrphanedSessions(orphanedSessions).then(() => {
+          const updatedPlan = markTasksAsInterrupted(currentPlan, orphanedSessions);
+          savePlan(updatedPlan).catch(() => {});
+          onBack();
+        });
       }
     }
   });
@@ -251,6 +293,43 @@ export default function ExecuteScreen({
         {failedCount > 0 && <Text color="red"> ({failedCount} failed)</Text>}
       </Box>
 
+      {/* Session Recovery UI */}
+      {recoveryMode === 'pending' && orphanedSessions.length > 0 && (
+        <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="yellow" padding={1}>
+          <Box marginBottom={1}>
+            <Text bold color="yellow">⚠ Orphaned Sessions Detected</Text>
+          </Box>
+          <Box marginBottom={1}>
+            <Text>
+              Found {orphanedSessions.length} interrupted task{orphanedSessions.length > 1 ? 's' : ''} with active sessions:
+            </Text>
+          </Box>
+          {orphanedSessions.map((o, i) => (
+            <Box key={i} marginLeft={2}>
+              <Text color="gray">• {o.task.title} (session: {o.sessionId.slice(0, 8)}...)</Text>
+            </Box>
+          ))}
+          <Box marginTop={1} marginBottom={1}>
+            <Text bold>Choose an option:</Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text>
+              <Text bold color="cyan">1</Text> — Mark as interrupted and continue (keeps sessions)
+            </Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text>
+              <Text bold color="cyan">2</Text> — Mark as interrupted and cleanup sessions (recommended)
+            </Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text>
+              <Text bold color="cyan">3</Text> — Cleanup sessions and go back
+            </Text>
+          </Box>
+        </Box>
+      )}
+
       {/* Progress bar */}
       {started && (
         <Box marginBottom={1}>
@@ -259,7 +338,7 @@ export default function ExecuteScreen({
         </Box>
       )}
 
-      {!started && (
+      {!started && recoveryMode !== 'pending' && (
         <Box marginBottom={1}>
           <Text color="yellow">
             Press x to start — init files (README.md, .gitignore) then {totalCount} tasks in {batches.length} batches
