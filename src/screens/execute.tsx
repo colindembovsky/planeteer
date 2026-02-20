@@ -78,7 +78,7 @@ function formatSessionEvent(taskId: string, event: SessionEventData): DisplayEve
   }
 
   return {
-    id: `${taskId}-${event.timestamp}-${eventIdCounter++}`,
+    id: `event-${eventIdCounter++}-${taskId}-${event.timestamp}`,
     taskId,
     type: event.type,
     timestamp: time,
