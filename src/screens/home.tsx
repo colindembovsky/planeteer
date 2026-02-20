@@ -31,8 +31,10 @@ export default function HomeScreen({ onNewPlan, onLoadPlan, onExecutePlan, onVal
       setSavedPlans(plans);
       setLoaded(true);
     });
-    // Load CLI info asynchronously
-    setCliInfo(getCliInfo());
+    // Load CLI info asynchronously (off the initial render path)
+    Promise.resolve().then(() => {
+      setCliInfo(getCliInfo());
+    });
   }, []);
 
   const items = [

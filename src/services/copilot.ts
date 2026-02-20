@@ -129,7 +129,7 @@ export async function getClient(): Promise<CopilotClient> {
       await c.start();
     } catch (err) {
       const message = (err as Error).message || 'Unknown error';
-      throw new Error(
+      const enhancedError = new Error(
         `Failed to start GitHub Copilot CLI.\n\n` +
         `Error: ${message}\n\n` +
         `The CLI was found at: ${cliLocation.path}\n` +
@@ -138,8 +138,10 @@ export async function getClient(): Promise<CopilotClient> {
         `Please ensure you have:\n` +
         `  1. Authenticated with GitHub Copilot (the CLI will prompt you)\n` +
         `  2. Active GitHub Copilot subscription\n` +
-        `  3. Proper permissions to execute the CLI binary`
+        `  3. Proper permissions to execute the CLI binary`,
+        { cause: err }
       );
+      throw enhancedError;
     }
     
     client = c;

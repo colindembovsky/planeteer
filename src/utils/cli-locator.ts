@@ -83,14 +83,17 @@ function findSystemCli(): string | null {
     const executable = process.platform === 'win32' ? 'where' : 'which';
     const result = execFileSync(executable, ['copilot'], {
       encoding: 'utf-8',
+      // Prevent PATH lookups from hanging indefinitely
+      timeout: 2000,
     });
     const path = result.trim().split('\n')[0];
     
     if (path && existsSync(path)) {
       return path;
     }
-  } catch {
-    // Ignore errors - CLI not in PATH
+  } catch (error) {
+    // On timeout or lookup errors, treat as "CLI not in PATH"
+    return null;
   }
 
   return null;
