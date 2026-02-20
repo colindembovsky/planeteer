@@ -1,5 +1,5 @@
-import type { ChatMessage, Task } from '../models/plan.js';
-import { sendPrompt, sendPromptSync, type StreamCallbacks } from './copilot.js';
+import type { ChatMessage, Task, SkillConfig } from '../models/plan.js';
+import { sendPrompt, sendPromptSync, type StreamCallbacks, type SkillOptions } from './copilot.js';
 
 const CLARIFY_SYSTEM_PROMPT = `You are an expert project planner helping a user clarify the scope of their project.
 Ask focused clarifying questions to understand:
@@ -100,11 +100,12 @@ export async function streamClarification(
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
   codebaseContext?: string,
+  skillOptions?: SkillOptions,
 ): Promise<void> {
   const systemPrompt = codebaseContext
     ? `${CLARIFY_SYSTEM_PROMPT}\n\n${codebaseContext}`
     : CLARIFY_SYSTEM_PROMPT;
-  return sendPrompt(systemPrompt, messages, callbacks);
+  return sendPrompt(systemPrompt, messages, callbacks, skillOptions);
 }
 
 /** Extract a JSON array from a response that may contain surrounding prose. */
@@ -131,18 +132,28 @@ export async function generateWBS(
   onDelta?: (delta: string, fullText: string) => void,
   maxRetries = 2,
   codebaseContext?: string,
+  skillOptions?: SkillOptions,
+  activeSkills?: SkillConfig[],
 ): Promise<Task[]> {
   let lastError: Error | null = null;
 
-  const userContent = codebaseContext
+  let userContent = codebaseContext
     ? `${scopeDescription}\n\n${codebaseContext}`
     : scopeDescription;
+
+  // Add skill context if active skills are provided
+  if (activeSkills && activeSkills.length > 0) {
+    const enabledSkills = activeSkills.filter((s) => s.enabled).map((s) => s.name);
+    if (enabledSkills.length > 0) {
+      userContent += `\n\nActive custom skills: ${enabledSkills.join(', ')}`;
+    }
+  }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const result = await sendPromptSync(WBS_SYSTEM_PROMPT, [
         { role: 'user', content: userContent },
-      ], { onDelta });
+      ], { onDelta, skillOptions });
 
       const jsonStr = extractJsonArray(result);
       if (!jsonStr.startsWith('[')) {
@@ -167,13 +178,14 @@ export async function refineWBS(
   currentTasks: Task[],
   refinementRequest: string,
   onDelta?: (delta: string, fullText: string) => void,
+  skillOptions?: SkillOptions,
 ): Promise<Task[]> {
   const result = await sendPromptSync(REFINE_SYSTEM_PROMPT, [
     {
       role: 'user',
       content: `Current tasks:\n${JSON.stringify(currentTasks, null, 2)}\n\nRefinement request: ${refinementRequest}`,
     },
-  ], { onDelta });
+  ], { onDelta, skillOptions });
 
   const jsonStr = extractJsonArray(result);
   const tasks = JSON.parse(jsonStr) as Task[];

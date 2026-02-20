@@ -1,6 +1,12 @@
 import type { Plan, Task } from '../models/plan.js';
 import { sendPromptSync } from './copilot.js';
+import type { SessionEvent } from './copilot.js';
 import { getReadyTasks } from '../utils/dependency-graph.js';
+
+export interface SessionEventWithTask {
+  taskId: string;
+  event: SessionEvent;
+}
 
 export interface ExecutionCallbacks {
   onTaskStart: (taskId: string) => void;
@@ -9,6 +15,7 @@ export interface ExecutionCallbacks {
   onTaskFailed: (taskId: string, error: string) => void;
   onBatchComplete: (batchIndex: number) => void;
   onAllDone: (plan: Plan) => void;
+  onSessionEvent?: (eventWithTask: SessionEventWithTask) => void;
 }
 
 function buildTaskPrompt(task: Task, plan: Plan, codebaseContext?: string): string {
@@ -112,6 +119,9 @@ export function executePlan(
         onDelta: (delta, fullText) => {
           callbacks.onTaskDelta(task.id, delta, fullText);
         },
+        onSessionEvent: (event) => {
+          callbacks.onSessionEvent?.({ taskId: task.id, event });
+        },
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
@@ -179,6 +189,9 @@ export function executePlan(
         ], {
           onDelta: (delta, fullText) => {
             callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
+          },
+          onSessionEvent: (event) => {
+            callbacks.onSessionEvent?.({ taskId: INIT_TASK_ID, event });
           },
         });
         callbacks.onTaskDone(INIT_TASK_ID, initResult);
