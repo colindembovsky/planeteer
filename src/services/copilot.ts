@@ -1,8 +1,12 @@
 import { CopilotClient } from '@github/copilot-sdk';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import type { SessionEvent } from '@github/copilot-sdk';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage, SkillConfig } from '../models/plan.js';
+
+// Re-export SessionEvent for use in other modules
+export type { SessionEvent };
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 const SKILLS_DIR = join(process.cwd(), '.github', 'skills');
@@ -177,6 +181,7 @@ export interface StreamCallbacks {
   onDelta: (text: string) => void;
   onDone: (fullText: string) => void;
   onError: (error: Error) => void;
+  onSessionEvent?: (event: SessionEvent) => void;
 }
 
 export async function sendPrompt(
@@ -224,6 +229,17 @@ export async function sendPrompt(
   let fullText = '';
   let settled = false;
 
+  // Listen for session events if callback provided, but avoid forwarding
+  // high-volume delta events that are already handled by onDelta.
+  if (callbacks.onSessionEvent) {
+    session.on((event: SessionEvent) => {
+      if (event.type === 'assistant.message_delta') {
+        return;
+      }
+      callbacks.onSessionEvent?.(event);
+    });
+  }
+
   session.on('assistant.message_delta', (event: { data: { deltaContent: string } }) => {
     fullText += event.data.deltaContent;
     callbacks.onDelta(event.data.deltaContent);
@@ -263,11 +279,21 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void; skillOptions?: SkillOptions },
+  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void;  },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
   const skillOptions = options?.skillOptions;
+  options?: { 
+    timeoutMs?: number; 
+    onDelta?: (delta: string, fullText: string) => void;
+    onSessionEvent?: (event: SessionEvent) => void;
+    skillOptions?: SkillOptions;
+  },
+): Promise<string> {
+  const idleTimeoutMs = options?.timeoutMs ?? 120_000;
+  const onDelta = options?.onDelta;
+  const onSessionEvent = options?.onSessionEvent;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -323,6 +349,9 @@ export async function sendPromptSync(
           reject(err);
         }
       },
-    }, skillOptions);
+    }, 
+    skillOptions);
+    onSessionEvent,
+    });
   });
 }
