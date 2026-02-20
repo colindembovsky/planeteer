@@ -17,6 +17,7 @@ interface ExecuteScreenProps {
 }
 
 interface DisplayEvent {
+  id: string;
   taskId: string;
   type: string;
   timestamp: string;
@@ -37,6 +38,9 @@ const STATUS_COLOR: Record<string, string> = {
   done: 'green',
   failed: 'red',
 };
+
+// Event ID counter for generating unique keys
+let eventIdCounter = 0;
 
 // Helper to format session events for display
 function formatSessionEvent(taskId: string, event: SessionEventData): DisplayEvent {
@@ -74,6 +78,7 @@ function formatSessionEvent(taskId: string, event: SessionEventData): DisplayEve
   }
 
   return {
+    id: `${taskId}-${event.timestamp}-${eventIdCounter++}`,
     taskId,
     type: event.type,
     timestamp: time,
@@ -484,8 +489,8 @@ export default function ExecuteScreen({
                 {truncated && (
                   <Text color="gray" dimColor>··· {eventLog.length - maxEvents} earlier events ···</Text>
                 )}
-                {visible.map((evt, i) => (
-                  <Box key={i}>
+                {visible.map((evt) => (
+                  <Box key={evt.id}>
                     <Text color="gray">[{evt.timestamp}] </Text>
                     <Text color="cyan">{evt.taskId}: </Text>
                     <Text color={evt.isError ? 'red' : 'white'}>{evt.message}</Text>
