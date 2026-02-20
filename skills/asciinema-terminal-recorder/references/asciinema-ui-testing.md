@@ -29,8 +29,28 @@ asciinema rec \
   artifacts/smoke.cast
 ```
 
+## Timestamped screen-capture reports
+
+Generate a markdown report from simulator output:
+
+```bash
+python3 scripts/generate_ui_report.py artifacts/sim-output.txt --output-dir artifacts --prefix simulator-ui
+```
+
+This writes:
+
+- `simulator-ui-<timestamp>.md` with generated UTC date-time metadata
+- `simulator-ui-<timestamp>-capture-*.txt` with extracted screen captures
+
+Useful options:
+
+- `--max-captures 8` to include more capture points
+- `--lines-per-capture 60` to include larger frame excerpts
+- `--output-dir <dir>` to separate artifacts by run
+
 ## Troubleshooting
 
 - **Recording hangs**: Ensure the command exits; in command mode recording ends when the command exits.
 - **Playback wraps unexpectedly**: Increase `--window-size` or replay in a terminal with equal/larger dimensions.
 - **Need cleaner pacing**: Lower `--idle-time-limit` (for example `0.5`) for faster, denser playback.
+- **Report shows only one capture**: Ensure source file has content and includes `---FRAME---` separators when using simulator output.

@@ -12,7 +12,8 @@ command_to_record="$*"
 
 window_size="${ASCIINEMA_WINDOW_SIZE:-120x30}"
 idle_limit="${ASCIINEMA_IDLE_LIMIT:-1.0}"
-title="${ASCIINEMA_TITLE:-UI Test Recording}"
+timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+title="${ASCIINEMA_TITLE:-UI Test Recording ${timestamp}}"
 
 asciinema rec \
   --overwrite \

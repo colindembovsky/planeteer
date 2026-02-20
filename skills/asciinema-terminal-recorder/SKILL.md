@@ -34,6 +34,7 @@ Defaults applied by the script:
 - `--idle-time-limit 1.0` to avoid long pauses
 - `--overwrite` to refresh existing artifacts
 - `--return` so failures propagate to callers
+- timestamped default title in recording metadata (UTC)
 
 Override defaults with env vars before running:
 
@@ -64,5 +65,20 @@ Replay locally:
 ```bash
 asciinema play demo.cast
 ```
+
+## Screen captures + markdown report (timestamped)
+
+For simulator output (`---FRAME---` separated), generate capture files and a report:
+
+```bash
+python3 scripts/generate_ui_report.py /tmp/sim-output.txt --output-dir artifacts --prefix simulator-ui
+```
+
+Output artifacts include:
+
+- `artifacts/simulator-ui-<YYYYMMDDTHHMMSSZ>.md` (report with UTC date-time)
+- `artifacts/simulator-ui-<...>-capture-XX-frame-YYYY.txt` (screen captures)
+
+Use `--max-captures` to control how many captures are embedded in the report.
 
 Read `references/asciinema-ui-testing.md` for command options and troubleshooting patterns.
