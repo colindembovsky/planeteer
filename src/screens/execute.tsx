@@ -201,17 +201,7 @@ export default function ExecuteScreen({
         const { event, taskId } = eventWithTask;
 
         // Only store session events that we actually render / use, and keep history bounded
-        if (event.type === 'session.context_changed') {
-          const { cwd, repository, branch } = event.data;
-          setSessionEvents((prev) => {
-            const updated = [...prev, eventWithTask];
-            return updated.slice(-100); // Keep last 100 events
-          });
-          setTaskContexts((prev) => ({
-            ...prev,
-            [taskId]: { cwd, repository, branch },
-          }));
-        } else if (event.type === 'session.start' && event.data.context) {
+        if (event.type === 'session.start' && event.data.context) {
           const { cwd, repository, branch } = event.data.context;
           setSessionEvents((prev) => {
             const updated = [...prev, eventWithTask];
@@ -418,7 +408,7 @@ export default function ExecuteScreen({
       {/* Context change events for selected task */}
       {started && selectedTask && (() => {
         const taskEvents = sessionEvents.filter(
-          (e) => e.taskId === selectedTask.id && e.event.type === 'session.context_changed'
+          (e) => e.taskId === selectedTask.id && e.event.type === 'session.start' && !!e.event.data.context
         );
         if (taskEvents.length === 0) return null;
         
@@ -426,9 +416,9 @@ export default function ExecuteScreen({
           <Box flexDirection="column" marginLeft={1} marginBottom={1}>
             <Text color="cyan" bold>Context Changes:</Text>
             {taskEvents.slice(-3).map((e) => {
-              if (e.event.type !== 'session.context_changed') return null;
+              if (e.event.type !== 'session.start' || !e.event.data.context) return null;
               const time = new Date(e.event.timestamp).toLocaleTimeString();
-              const { cwd, repository, branch } = e.event.data;
+              const { cwd, repository, branch } = e.event.data.context;
               return (
                 <Box key={e.event.id}>
                   <Text color="gray">{time} </Text>

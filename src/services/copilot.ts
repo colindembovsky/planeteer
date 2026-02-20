@@ -279,13 +279,8 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void;  },
-): Promise<string> {
-  const idleTimeoutMs = options?.timeoutMs ?? 120_000;
-  const onDelta = options?.onDelta;
-  const skillOptions = options?.skillOptions;
-  options?: { 
-    timeoutMs?: number; 
+  options?: {
+    timeoutMs?: number;
     onDelta?: (delta: string, fullText: string) => void;
     onSessionEvent?: (event: SessionEvent) => void;
     skillOptions?: SkillOptions;
@@ -294,6 +289,7 @@ export async function sendPromptSync(
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
   const onSessionEvent = options?.onSessionEvent;
+  const skillOptions = options?.skillOptions;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -349,9 +345,7 @@ export async function sendPromptSync(
           reject(err);
         }
       },
-    }, 
-    skillOptions);
-    onSessionEvent,
-    });
+      onSessionEvent,
+    }, skillOptions);
   });
 }
