@@ -1,17 +1,24 @@
 import { CopilotClient } from '@github/copilot-sdk';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import type { SessionEvent } from '@github/copilot-sdk';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { ChatMessage } from '../models/plan.js';
+import type { ChatMessage, SkillConfig } from '../models/plan.js';
 
 // Re-export SessionEvent for use in other modules
 export type { SessionEvent };
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
+const SKILLS_DIR = join(process.cwd(), '.github', 'skills');
 
 interface Settings {
   model?: string;
+  disabledSkills?: string[];
+}
+
+export interface SkillOptions {
+  skillDirectories?: string[];
+  disabledSkills?: string[];
 }
 
 async function loadSettings(): Promise<Settings> {
@@ -28,6 +35,68 @@ async function saveSettings(settings: Settings): Promise<void> {
   const dir = join(process.cwd(), '.planeteer');
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   await writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+}
+
+/** Ensure the skills directory exists */
+export async function ensureSkillsDirectory(): Promise<void> {
+  if (!existsSync(SKILLS_DIR)) {
+    await mkdir(SKILLS_DIR, { recursive: true });
+  }
+}
+
+/** Get the path to the skills directory */
+export function getSkillsDirectory(): string {
+  return SKILLS_DIR;
+}
+
+/** List all skill files in the skills directory */
+export async function listSkillFiles(): Promise<string[]> {
+  try {
+    if (!existsSync(SKILLS_DIR)) {
+      return [];
+    }
+    const files = await readdir(SKILLS_DIR);
+    return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+  } catch (err) {
+    console.error('Error listing skill files:', err);
+    return [];
+  }
+}
+
+/** Load skill configurations from the skills directory */
+export async function loadSkillConfigs(): Promise<SkillConfig[]> {
+  const skillFiles = await listSkillFiles();
+  const skills: SkillConfig[] = [];
+  
+  for (const file of skillFiles) {
+    try {
+      const content = await readFile(join(SKILLS_DIR, file), 'utf-8');
+      // Parse YAML to extract skill name - simple parsing for name field
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+      if (nameMatch && nameMatch[1]) {
+        const name = nameMatch[1].trim();
+        skills.push({ name, enabled: true });
+      }
+    } catch (err) {
+      console.error(`Error loading skill file ${file}:`, err);
+      // Graceful degradation - skip malformed files
+    }
+  }
+  
+  return skills;
+}
+
+/** Get skill options for Copilot SDK */
+export async function getSkillOptions(): Promise<SkillOptions> {
+  const skillFiles = await listSkillFiles();
+  
+  if (skillFiles.length === 0) {
+    return {};
+  }
+  
+  return {
+    skillDirectories: [SKILLS_DIR],
+  };
 }
 
 export interface ModelEntry {
@@ -119,6 +188,7 @@ export async function sendPrompt(
   systemPrompt: string,
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
+  skillOptions?: SkillOptions,
 ): Promise<void> {
   let copilot: CopilotClient;
   try {
@@ -130,10 +200,27 @@ export async function sendPrompt(
 
   let session;
   try {
-    session = await copilot.createSession({
+    interface SessionConfigWithSkills {
+      model: string;
+      streaming: boolean;
+      skillDirectories?: string[];
+      disabledSkills?: string[];
+    }
+    
+    const sessionConfig: SessionConfigWithSkills = {
       model: currentModel,
       streaming: true,
-    });
+    };
+    
+    if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
+      sessionConfig.skillDirectories = skillOptions.skillDirectories;
+    }
+    
+    if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
+      sessionConfig.disabledSkills = skillOptions.disabledSkills;
+    }
+    
+    session = await copilot.createSession(sessionConfig);
   } catch (err) {
     callbacks.onError(new Error(`Failed to create session: ${(err as Error).message}`));
     return;
@@ -192,10 +279,16 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
+  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void;  },
+): Promise<string> {
+  const idleTimeoutMs = options?.timeoutMs ?? 120_000;
+  const onDelta = options?.onDelta;
+  const skillOptions = options?.skillOptions;
   options?: { 
     timeoutMs?: number; 
     onDelta?: (delta: string, fullText: string) => void;
     onSessionEvent?: (event: SessionEvent) => void;
+    skillOptions?: SkillOptions;
   },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
@@ -256,7 +349,9 @@ export async function sendPromptSync(
           reject(err);
         }
       },
-      onSessionEvent,
+    }, 
+    skillOptions);
+    onSessionEvent,
     });
   });
 }
