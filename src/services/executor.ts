@@ -1,6 +1,12 @@
 import type { Plan, Task } from '../models/plan.js';
 import { sendPromptSync } from './copilot.js';
+import type { SessionEvent } from './copilot.js';
 import { getReadyTasks } from '../utils/dependency-graph.js';
+
+export interface SessionEventWithTask {
+  taskId: string;
+  event: SessionEvent;
+}
 
 export interface ExecutionCallbacks {
   onTaskStart: (taskId: string) => void;
@@ -9,6 +15,7 @@ export interface ExecutionCallbacks {
   onTaskFailed: (taskId: string, error: string) => void;
   onBatchComplete: (batchIndex: number) => void;
   onAllDone: (plan: Plan) => void;
+  onSessionEvent?: (eventWithTask: SessionEventWithTask) => void;
   onPlanUpdate?: (plan: Plan) => void;
 }
 
@@ -107,16 +114,21 @@ export function executePlan(
 
     try {
       const prompt = buildTaskPrompt(task, updatedPlan, codebaseContext);
-      const { result, sessionId } = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+      const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
         { role: 'user', content: prompt },
       ], {
         onDelta: (delta, fullText) => {
           callbacks.onTaskDelta(task.id, delta, fullText);
         },
+        onSessionEvent: (event) => {
+          callbacks.onSessionEvent?.({ taskId: task.id, event });
+        },
+        onSessionStart: (sessionId) => {
+          taskInPlan.sessionId = sessionId;
+        },
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
-      taskInPlan.sessionId = sessionId;
       callbacks.onTaskDone(task.id, result);
       callbacks.onPlanUpdate?.(updatedPlan);
     } catch (err) {
@@ -140,6 +152,7 @@ export function executePlan(
         if (taskInPlan && taskInPlan.status === 'failed') {
           taskInPlan.status = 'pending';
           taskInPlan.agentResult = undefined;
+          taskInPlan.sessionId = undefined;
         }
       }
 
@@ -178,11 +191,14 @@ export function executePlan(
       callbacks.onTaskStart(INIT_TASK_ID);
       try {
         const initPrompt = buildInitPrompt(updatedPlan);
-        const { result: initResult } = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
+        const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
           { role: 'user', content: initPrompt },
         ], {
           onDelta: (delta, fullText) => {
             callbacks.onTaskDelta(INIT_TASK_ID, delta, fullText);
+          },
+          onSessionEvent: (event) => {
+            callbacks.onSessionEvent?.({ taskId: INIT_TASK_ID, event });
           },
         });
         callbacks.onTaskDone(INIT_TASK_ID, initResult);

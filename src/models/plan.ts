@@ -11,6 +11,11 @@ export interface Task {
   sessionId?: string;
 }
 
+export interface SkillConfig {
+  name: string;
+  enabled: boolean;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -18,6 +23,7 @@ export interface Plan {
   createdAt: string;
   updatedAt: string;
   tasks: Task[];
+  skills?: SkillConfig[];
 }
 
 export interface ChatMessage {

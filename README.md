@@ -53,9 +53,122 @@ planeteer list
 | `↑` `↓` | Navigate task list |
 | `⏎` | Submit input / proceed to next screen |
 | `Esc` | Go back |
+| `⇥` | Toggle view (Tree / Batches / Skills) |
+| `Space` | Toggle skill on/off (Skills view) |
+| `/` | Command mode (refine screen) |
 | `s` | Save plan (refine screen) |
 | `x` | Start execution (refine/execute screen) |
 | `q` | Quit |
+
+## Custom Copilot Skills
+
+Planeteer supports custom Copilot skills for domain-specific planning. Skills help Copilot generate better work breakdowns by providing context about specific project types.
+
+### Using Skills
+
+Skills are automatically loaded from the `.github/skills/` directory. On first run, this directory is created with example skills. To use skills:
+
+1. View active skills in the **Refine** screen by pressing `⇥` to cycle to the Skills view
+2. Use `↑`/`↓` to navigate and `Space` to toggle skills on/off
+3. Skills are applied during work breakdown generation and refinement
+
+### Creating Skills
+
+Create a new YAML file in `.github/skills/` with this structure:
+
+```yaml
+name: my-custom-skill
+description: Brief description of what this skill helps with
+
+instructions: |
+  When planning this type of project, follow these guidelines:
+  
+  1. **Category 1**: Guidelines for this aspect
+     - Specific point 1
+     - Specific point 2
+  
+  2. **Category 2**: More guidelines
+     - Another point
+     - Another point
+  
+  General advice about task structure, dependencies, etc.
+
+examples:
+  - input: "Example project description"
+    tasks:
+      - Task 1 that would be generated
+      - Task 2 that would be generated
+      - Task 3 that would be generated
+```
+
+### Skill Examples
+
+**Example 1: Web Application Skill**
+
+```yaml
+name: web-app
+description: Expert in web application development
+
+instructions: |
+  Break down web projects into frontend, backend, database, and deployment:
+  
+  1. **Frontend**: Component structure, routing, state management
+  2. **Backend**: API design, business logic, authentication
+  3. **Database**: Schema design, migrations, seed data
+  4. **Infrastructure**: CI/CD, containerization, cloud deployment
+  
+  Maximize parallelism between frontend and backend work.
+
+examples:
+  - input: "Build a task management web app"
+    tasks:
+      - Setup React frontend with TypeScript
+      - Design REST API for task CRUD
+      - Implement PostgreSQL schema
+      - Add JWT authentication
+      - Deploy to cloud platform
+```
+
+**Example 2: Data Pipeline Skill**
+
+```yaml
+name: data-pipeline
+description: Expert in ETL and data processing workflows
+
+instructions: |
+  Structure data pipelines with these phases:
+  
+  1. **Extraction**: Data sources, connectors, scheduling
+  2. **Transformation**: Cleaning, validation, enrichment
+  3. **Loading**: Destination setup, batch vs streaming
+  4. **Monitoring**: Logging, alerts, data quality checks
+  
+  Consider idempotency, error handling, and reprocessing.
+
+examples:
+  - input: "Build ETL pipeline from API to data warehouse"
+    tasks:
+      - Implement API data extractor
+      - Create transformation functions
+      - Setup data warehouse schema
+      - Add error handling and retries
+      - Configure monitoring and alerts
+```
+
+### Skill Best Practices
+
+- **One skill per domain**: Create focused skills (e.g., `mobile-app`, `ml-pipeline`) rather than generic ones
+- **Clear instructions**: Be specific about task breakdown patterns and dependencies
+- **Provide examples**: Include 2-3 representative examples with typical task structures
+- **Enable selectively**: Toggle skills on/off based on your current project type
+
+### Built-in Example
+
+Two example skills are included in the repository to help you get started:
+- **example-web-app-skill.yaml** - Web application development best practices
+- **example-data-pipeline-skill.yaml** - ETL and data processing workflow patterns
+
+These files are automatically available in `.github/skills/` and can be used as templates for creating your own custom skills.
 
 ## Development
 
@@ -180,12 +293,6 @@ Planeteer includes robust session persistence to handle interrupted executions:
 - `done` — Completed successfully
 - `failed` — Execution failed (can be retried with `r`)
 - `interrupted` — Was in progress when execution was interrupted
-
-**Benefits**
-- **Crash recovery**: Resume work after unexpected crashes or network issues
-- **Resource management**: Prevents accumulation of orphaned Copilot sessions
-- **Debugging**: Inspect failed executions and retry specific tasks
-- **Long-running executions**: For plans with many tasks, safely stop and resume across multiple sessions
 
 ## Project Structure
 

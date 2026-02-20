@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Plan, Task, ChatMessage } from '../models/plan.js';
+import type { Plan, Task, ChatMessage, SkillConfig } from '../models/plan.js';
 import { createPlan } from '../models/plan.js';
 import { generateWBS } from '../services/planner.js';
+import { getSkillOptions, loadSkillConfigs } from '../services/copilot.js';
 import { detectCycles, computeBatches } from '../utils/dependency-graph.js';
 import TaskTree from '../components/task-tree.js';
 import BatchView from '../components/batch-view.js';
@@ -37,6 +38,7 @@ export default function BreakdownScreen({
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [attempt, setAttempt] = useState(0);
   const [streamText, setStreamText] = useState('');
+  const [skillConfigs, setSkillConfigs] = useState<SkillConfig[]>([]);
 
   useEffect(() => {
     if (existingPlan) return;
@@ -44,9 +46,22 @@ export default function BreakdownScreen({
     setLoading(true);
     setError(null);
     setStreamText('');
-    generateWBS(scopeDescription, (_delta, fullText) => {
-      setStreamText(fullText);
-    }, 2, codebaseContext || undefined)
+    
+    // Load skills and generate WBS
+    Promise.all([getSkillOptions(), loadSkillConfigs()])
+      .then(([skillOptions, skills]) => {
+        setSkillConfigs(skills);
+        return generateWBS(
+          scopeDescription, 
+          (_delta, fullText) => {
+            setStreamText(fullText);
+          }, 
+          2, 
+          codebaseContext || undefined,
+          skillOptions,
+          skills
+        );
+      })
       .then((tasks) => {
         // Use first line only, strip markdown bold markers, and cap length
         const planName = scopeDescription
@@ -59,6 +74,7 @@ export default function BreakdownScreen({
           name: planName,
           description: scopeDescription,
           tasks,
+          skills: skillConfigs,
         });
         setPlan(newPlan);
         setLoading(false);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
-import type { ExecutionOptions, ExecutionHandle } from '../services/executor.js';
+import type { ExecutionOptions, ExecutionHandle, SessionEventWithTask } from '../services/executor.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import { detectOrphanedSessions, cleanupOrphanedSessions, markTasksAsInterrupted } from '../services/session-recovery.js';
@@ -50,6 +50,8 @@ export default function ExecuteScreen({
   const [runCount, setRunCount] = useState(0); // incremented to re-trigger execution
   const execHandleRef = useRef<ExecutionHandle | null>(null);
   const [summarized, setSummarized] = useState('');
+  const [sessionEvents, setSessionEvents] = useState<SessionEventWithTask[]>([]);
+  const [taskContexts, setTaskContexts] = useState<Record<string, { cwd?: string; repository?: string; branch?: string }>>({});
   const [orphanedSessions, setOrphanedSessions] = useState<OrphanedSessionInfo[]>([]);
   const [recoveryMode, setRecoveryMode] = useState<'pending' | 'cleaning' | 'fresh' | 'none'>('pending');
   const [recoveryError, setRecoveryError] = useState<string>('');
@@ -60,7 +62,7 @@ export default function ExecuteScreen({
 
   useInput((ch, key) => {
     if (key.escape && !executing) onBack();
-    if (ch === 'x' && !started) {
+    if (ch === 'x' && !started && recoveryMode !== 'pending') {
       setStarted(true);
       setExecuting(true);
       setRunCount((c) => c + 1);
@@ -90,18 +92,18 @@ export default function ExecuteScreen({
         execHandleRef.current.retryTask(selected.id);
       } else if (!executing) {
         // Retry all failed tasks when execution has stopped
-        const hasFailed = currentPlan.tasks.some((t) => t.status === 'failed');
+        const hasFailed = currentPlan.tasks.some((t) => t.status === 'failed' || t.status === 'interrupted');
         if (hasFailed) {
           setCurrentPlan((p) => ({
             ...p,
             tasks: p.tasks.map((t) =>
-              t.status === 'failed' ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
+              t.status === 'failed' || t.status === 'interrupted' ? { ...t, status: 'pending' as const, agentResult: undefined } : t,
             ),
           }));
           setTaskStreams((prev) => {
             const next = { ...prev };
             for (const t of currentPlan.tasks) {
-              if (t.status === 'failed') delete next[t.id];
+              if (t.status === 'failed' || t.status === 'interrupted') delete next[t.id];
             }
             return next;
           });
@@ -254,6 +256,22 @@ export default function ExecuteScreen({
         }
         // Otherwise stay on execute screen — user can press 'r' to retry
       },
+      onSessionEvent: (eventWithTask) => {
+        const { event, taskId } = eventWithTask;
+
+        // Only store session events that we actually render / use, and keep history bounded
+        if (event.type === 'session.start' && event.data.context) {
+          const { cwd, repository, branch } = event.data.context;
+          setSessionEvents((prev) => {
+            const updated = [...prev, eventWithTask];
+            return updated.slice(-100); // Keep last 100 events
+          });
+          setTaskContexts((prev) => ({
+            ...prev,
+            [taskId]: { cwd, repository, branch },
+          }));
+        }
+      },
       onPlanUpdate: (updatedPlan) => {
         // Incremental save after each task completes or fails
         savePlan(updatedPlan).catch(() => {
@@ -267,6 +285,7 @@ export default function ExecuteScreen({
 
   const doneCount = currentPlan.tasks.filter((t) => t.status === 'done').length;
   const failedCount = currentPlan.tasks.filter((t) => t.status === 'failed').length;
+  const interruptedCount = currentPlan.tasks.filter((t) => t.status === 'interrupted').length;
   const totalCount = currentPlan.tasks.length;
 
   // Build the list of displayable tasks for the current view index
@@ -306,6 +325,7 @@ export default function ExecuteScreen({
         <Text color="green">{doneCount}</Text>
         <Text color="gray">/{totalCount} done</Text>
         {failedCount > 0 && <Text color="red"> ({failedCount} failed)</Text>}
+        {interruptedCount > 0 && <Text color="magenta"> ({interruptedCount} interrupted)</Text>}
       </Box>
 
       {/* Session Recovery UI */}
@@ -434,18 +454,29 @@ export default function ExecuteScreen({
             const isSelected = i === selectedTaskIndex;
             const icon = STATUS_ICON[task.status] ?? '?';
             const color = STATUS_COLOR[task.status] ?? 'gray';
+            const context = taskContexts[task.id];
             return (
-              <Box key={task.id}>
-                <Text color={isSelected ? 'white' : 'gray'}>{isSelected ? '❯ ' : '  '}</Text>
-                <Text color={color}>{icon} </Text>
-                <Text color={isSelected ? 'white' : color} bold={isSelected}>
-                  {task.id}
-                </Text>
-                <Text color="gray"> — {task.title}</Text>
-                {task.status === 'in_progress' && (
-                  <Text color="yellow"> </Text>
+              <Box key={task.id} flexDirection="column">
+                <Box>
+                  <Text color={isSelected ? 'white' : 'gray'}>{isSelected ? '❯ ' : '  '}</Text>
+                  <Text color={color}>{icon} </Text>
+                  <Text color={isSelected ? 'white' : color} bold={isSelected}>
+                    {task.id}
+                  </Text>
+                  <Text color="gray"> — {task.title}</Text>
+                  {task.status === 'in_progress' && (
+                    <Text color="yellow"> </Text>
+                  )}
+                  {task.status === 'in_progress' && <Spinner />}
+                </Box>
+                {context?.cwd && (
+                  <Box marginLeft={4}>
+                    <Text color="cyan" dimColor>📁 {context.cwd}</Text>
+                    {context.repository && (
+                      <Text color="blue" dimColor> ({context.repository})</Text>
+                    )}
+                  </Box>
                 )}
-                {task.status === 'in_progress' && <Spinner />}
               </Box>
             );
           })}
@@ -492,13 +523,39 @@ export default function ExecuteScreen({
         </Box>
       )}
 
+      {/* Context change events for selected task */}
+      {started && selectedTask && (() => {
+        const taskEvents = sessionEvents.filter(
+          (e) => e.taskId === selectedTask.id && e.event.type === 'session.start' && !!e.event.data.context
+        );
+        if (taskEvents.length === 0) return null;
+        
+        return (
+          <Box flexDirection="column" marginLeft={1} marginBottom={1}>
+            <Text color="cyan" bold>Context Changes:</Text>
+            {taskEvents.slice(-3).map((e) => {
+              if (e.event.type !== 'session.start' || !e.event.data.context) return null;
+              const time = new Date(e.event.timestamp).toLocaleTimeString();
+              const { cwd, repository, branch } = e.event.data.context;
+              return (
+                <Box key={e.event.id}>
+                  <Text color="gray">{time} </Text>
+                  <Text color="cyan">→ {cwd}</Text>
+                  {repository && <Text color="blue"> ({repository}{branch ? `@${branch}` : ''})</Text>}
+                </Box>
+              );
+            })}
+          </Box>
+        );
+      })()}
+
       {/* Retry prompt when there are failures */}
-      {started && !executing && failedCount > 0 && (
+      {started && !executing && (failedCount > 0 || interruptedCount > 0) && (
         <Box marginBottom={1}>
           <Text color="red" bold>
-            {failedCount} task{failedCount > 1 ? 's' : ''} failed.
+            {failedCount + interruptedCount} task{failedCount + interruptedCount > 1 ? 's' : ''} failed or interrupted.
           </Text>
-          <Text color="yellow"> Press r to retry failed tasks.</Text>
+          <Text color="yellow"> Press r to retry.</Text>
         </Box>
       )}
 
@@ -524,11 +581,13 @@ export default function ExecuteScreen({
             ? '←→: switch batch  ↑↓: select task  r: retry task  ⏳ executing...'
             : executing
               ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
-              : started && failedCount > 0
+              : started && (failedCount > 0 || interruptedCount > 0)
                 ? '←→: switch batch  ↑↓: select task  r: retry  z: summarize  esc: back'
                 : started
                   ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
-                  : 'x: start  esc: back'
+                  : recoveryMode === 'pending'
+                    ? '1: keep sessions  2: cleanup sessions  3: cleanup & back'
+                    : 'x: start  esc: back'
         }
       />
     </Box>

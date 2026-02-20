@@ -1,13 +1,24 @@
 import { CopilotClient } from '@github/copilot-sdk';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import type { SessionEvent } from '@github/copilot-sdk';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { ChatMessage } from '../models/plan.js';
+import type { ChatMessage, SkillConfig } from '../models/plan.js';
+
+// Re-export SessionEvent for use in other modules
+export type { SessionEvent };
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
+const SKILLS_DIR = join(process.cwd(), '.github', 'skills');
 
 interface Settings {
   model?: string;
+  disabledSkills?: string[];
+}
+
+export interface SkillOptions {
+  skillDirectories?: string[];
+  disabledSkills?: string[];
 }
 
 async function loadSettings(): Promise<Settings> {
@@ -24,6 +35,68 @@ async function saveSettings(settings: Settings): Promise<void> {
   const dir = join(process.cwd(), '.planeteer');
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   await writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+}
+
+/** Ensure the skills directory exists */
+export async function ensureSkillsDirectory(): Promise<void> {
+  if (!existsSync(SKILLS_DIR)) {
+    await mkdir(SKILLS_DIR, { recursive: true });
+  }
+}
+
+/** Get the path to the skills directory */
+export function getSkillsDirectory(): string {
+  return SKILLS_DIR;
+}
+
+/** List all skill files in the skills directory */
+export async function listSkillFiles(): Promise<string[]> {
+  try {
+    if (!existsSync(SKILLS_DIR)) {
+      return [];
+    }
+    const files = await readdir(SKILLS_DIR);
+    return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+  } catch (err) {
+    console.error('Error listing skill files:', err);
+    return [];
+  }
+}
+
+/** Load skill configurations from the skills directory */
+export async function loadSkillConfigs(): Promise<SkillConfig[]> {
+  const skillFiles = await listSkillFiles();
+  const skills: SkillConfig[] = [];
+  
+  for (const file of skillFiles) {
+    try {
+      const content = await readFile(join(SKILLS_DIR, file), 'utf-8');
+      // Parse YAML to extract skill name - simple parsing for name field
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+      if (nameMatch && nameMatch[1]) {
+        const name = nameMatch[1].trim();
+        skills.push({ name, enabled: true });
+      }
+    } catch (err) {
+      console.error(`Error loading skill file ${file}:`, err);
+      // Graceful degradation - skip malformed files
+    }
+  }
+  
+  return skills;
+}
+
+/** Get skill options for Copilot SDK */
+export async function getSkillOptions(): Promise<SkillOptions> {
+  const skillFiles = await listSkillFiles();
+  
+  if (skillFiles.length === 0) {
+    return {};
+  }
+  
+  return {
+    skillDirectories: [SKILLS_DIR],
+  };
 }
 
 export interface ModelEntry {
@@ -106,14 +179,17 @@ export async function stopClient(): Promise<void> {
 
 export interface StreamCallbacks {
   onDelta: (text: string) => void;
-  onDone: (fullText: string, sessionId: string) => void;
+  onDone: (fullText: string) => void;
   onError: (error: Error) => void;
+  onSessionEvent?: (event: SessionEvent) => void;
+  onSessionStart?: (sessionId: string) => void;
 }
 
 export async function sendPrompt(
   systemPrompt: string,
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
+  skillOptions?: SkillOptions,
 ): Promise<void> {
   let copilot: CopilotClient;
   try {
@@ -125,17 +201,48 @@ export async function sendPrompt(
 
   let session;
   try {
-    session = await copilot.createSession({
+    interface SessionConfigWithSkills {
+      model: string;
+      streaming: boolean;
+      skillDirectories?: string[];
+      disabledSkills?: string[];
+    }
+    
+    const sessionConfig: SessionConfigWithSkills = {
       model: currentModel,
       streaming: true,
-    });
+    };
+    
+    if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
+      sessionConfig.skillDirectories = skillOptions.skillDirectories;
+    }
+    
+    if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
+      sessionConfig.disabledSkills = skillOptions.disabledSkills;
+    }
+    
+    session = await copilot.createSession(sessionConfig);
   } catch (err) {
     callbacks.onError(new Error(`Failed to create session: ${(err as Error).message}`));
     return;
   }
 
+  // Notify caller of the session ID for persistence tracking
+  callbacks.onSessionStart?.(session.sessionId);
+
   let fullText = '';
   let settled = false;
+
+  // Listen for session events if callback provided, but avoid forwarding
+  // high-volume delta events that are already handled by onDelta.
+  if (callbacks.onSessionEvent) {
+    session.on((event: SessionEvent) => {
+      if (event.type === 'assistant.message_delta') {
+        return;
+      }
+      callbacks.onSessionEvent?.(event);
+    });
+  }
 
   session.on('assistant.message_delta', (event: { data: { deltaContent: string } }) => {
     fullText += event.data.deltaContent;
@@ -145,7 +252,7 @@ export async function sendPrompt(
   session.on('session.idle', () => {
     if (settled) return;
     settled = true;
-    callbacks.onDone(fullText, session.sessionId);
+    callbacks.onDone(fullText);
   });
 
   session.on('session.error', (event: { data: { message: string } }) => {
@@ -176,10 +283,19 @@ export async function sendPrompt(
 export async function sendPromptSync(
   systemPrompt: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; onDelta?: (delta: string, fullText: string) => void },
-): Promise<{ result: string; sessionId: string }> {
+  options?: {
+    timeoutMs?: number;
+    onDelta?: (delta: string, fullText: string) => void;
+    onSessionEvent?: (event: SessionEvent) => void;
+    onSessionStart?: (sessionId: string) => void;
+    skillOptions?: SkillOptions;
+  },
+): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
+  const onSessionEvent = options?.onSessionEvent;
+  const onSessionStart = options?.onSessionStart;
+  const skillOptions = options?.skillOptions;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -195,8 +311,7 @@ export async function sendPromptSync(
         settled = true;
         if (accumulated.length > 0) {
           // We have partial content — resolve with what we got
-          // Note: sessionId is not available in timeout case, we'll set it to empty string
-          reject(new Error('Session timed out without completion'));
+          resolve(accumulated);
         } else {
           reject(new Error(`Request timed out after ${Math.round(idleTimeoutMs / 1000)}s of inactivity — the model may be overloaded. Try again or switch to a different model.`));
         }
@@ -214,11 +329,11 @@ export async function sendPromptSync(
         // Reset idle timer — only times out if no new deltas arrive
         startIdleTimer();
       },
-      onDone: (text, sessionId) => {
+      onDone: (text) => {
         if (!settled) {
           settled = true;
           if (timer) clearTimeout(timer);
-          resolve({ result: text, sessionId });
+          resolve(text);
         }
       },
       onError: (err) => {
@@ -229,15 +344,16 @@ export async function sendPromptSync(
         if (accumulated.length > 0 && recentlyActive) {
           settled = true;
           if (timer) clearTimeout(timer);
-          // We don't have sessionId in error case, reject instead
-          reject(err);
+          resolve(accumulated);
         } else {
           settled = true;
           if (timer) clearTimeout(timer);
           reject(err);
         }
       },
-    });
+      onSessionEvent,
+      onSessionStart,
+    }, skillOptions);
   });
 }
 
