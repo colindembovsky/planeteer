@@ -26,6 +26,7 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
   const [codebaseContext, setCodebaseContext] = useState('');
   const [inspecting, setInspecting] = useState(false);
   const [inspectDone, setInspectDone] = useState(false);
+  const [compactionMsg, setCompactionMsg] = useState('');
 
   useEffect(() => {
     loadHistory().then(setHistory);
@@ -107,6 +108,19 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
             { role: 'assistant', content: `Error: ${error.message}` },
           ]);
           setStreaming(false);
+        },
+        onSessionEvent: (event) => {
+          if (event.type === 'session.compaction_start') {
+            setCompactionMsg('⟳ Compacting session history…');
+          } else if (event.type === 'session.compaction_complete') {
+            if (event.data.success) {
+              const removed = event.data.messagesRemoved ?? 0;
+              setCompactionMsg(`✓ Session history compacted (${removed} messages removed)`);
+            } else {
+              setCompactionMsg(`⚠ Compaction failed: ${event.data.error ?? 'unknown error'}`);
+            }
+            setTimeout(() => setCompactionMsg(''), 5000);
+          }
         },
       }, codebaseContext || undefined).catch((error: Error) => {
         setMessages((prev) => [
@@ -229,6 +243,13 @@ export default function ClarifyScreen({ onScopeConfirmed, onBack }: ClarifyScree
             history={history}
             placeholder={clarification ? 'Type your answer...' : 'Describe your project...'}
           />
+        </Box>
+      )}
+
+      {/* Compaction notification */}
+      {compactionMsg !== '' && (
+        <Box marginBottom={1}>
+          <Text color="magenta">{compactionMsg}</Text>
         </Box>
       )}
 

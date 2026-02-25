@@ -177,6 +177,9 @@ export async function stopClient(): Promise<void> {
   }
 }
 
+/** Default context utilization threshold (0.0–1.0) at which background compaction starts. */
+export const COMPACTION_THRESHOLD = 0.8;
+
 export interface StreamCallbacks {
   onDelta: (text: string) => void;
   onDone: (fullText: string) => void;
@@ -205,11 +208,13 @@ export async function sendPrompt(
       streaming: boolean;
       skillDirectories?: string[];
       disabledSkills?: string[];
+      infiniteSessions?: { backgroundCompactionThreshold?: number };
     }
     
     const sessionConfig: SessionConfigWithSkills = {
       model: currentModel,
       streaming: true,
+      infiniteSessions: { backgroundCompactionThreshold: COMPACTION_THRESHOLD },
     };
     
     if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {

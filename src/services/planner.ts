@@ -179,13 +179,14 @@ export async function refineWBS(
   refinementRequest: string,
   onDelta?: (delta: string, fullText: string) => void,
   skillOptions?: SkillOptions,
+  onSessionEvent?: (event: import('./copilot.js').SessionEvent) => void,
 ): Promise<Task[]> {
   const result = await sendPromptSync(REFINE_SYSTEM_PROMPT, [
     {
       role: 'user',
       content: `Current tasks:\n${JSON.stringify(currentTasks, null, 2)}\n\nRefinement request: ${refinementRequest}`,
     },
-  ], { onDelta, skillOptions });
+  ], { onDelta, skillOptions, onSessionEvent });
 
   const jsonStr = extractJsonArray(result);
   const tasks = JSON.parse(jsonStr) as Task[];
