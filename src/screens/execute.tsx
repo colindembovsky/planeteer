@@ -3,8 +3,10 @@ import { Box, Text, useInput } from 'ink';
 import type { Plan, Task } from '../models/plan.js';
 import { executePlan } from '../services/executor.js';
 import type { ExecutionOptions, ExecutionHandle, SessionEventWithTask } from '../services/executor.js';
+import type { PermissionRequest, PermissionRequestResult } from '../services/copilot.js';
 import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
+import PermissionPrompt from '../components/permission-prompt.js';
 import Spinner from '../components/spinner.js';
 import StatusBar from '../components/status-bar.js';
 
@@ -48,12 +50,31 @@ export default function ExecuteScreen({
   const [summarized, setSummarized] = useState('');
   const [sessionEvents, setSessionEvents] = useState<SessionEventWithTask[]>([]);
   const [taskContexts, setTaskContexts] = useState<Record<string, { cwd?: string; repository?: string; branch?: string }>>({});
+  const [permissionLog, setPermissionLog] = useState<Array<{ request: PermissionRequest; taskId?: string; approved: boolean }>>([]);
+  const [pendingPermission, setPendingPermission] = useState<{
+    request: PermissionRequest;
+    taskId?: string;
+    resolve: (result: PermissionRequestResult) => void;
+  } | null>(null);
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
   const totalDisplayBatches = batches.length + 1;
 
   useInput((ch, key) => {
+    // Handle pending permission requests first
+    if (pendingPermission) {
+      if (ch === 'y') {
+        setPermissionLog((prev) => [...prev, { request: pendingPermission.request, taskId: pendingPermission.taskId, approved: true }]);
+        pendingPermission.resolve({ kind: 'approved' });
+        setPendingPermission(null);
+      } else if (ch === 'n') {
+        setPermissionLog((prev) => [...prev, { request: pendingPermission.request, taskId: pendingPermission.taskId, approved: false }]);
+        pendingPermission.resolve({ kind: 'denied-interactively-by-user' });
+        setPendingPermission(null);
+      }
+      return;
+    }
     if (key.escape && !executing) onBack();
     if (ch === 'x' && !started) {
       setStarted(true);
@@ -212,6 +233,11 @@ export default function ExecuteScreen({
             [taskId]: { cwd, repository, branch },
           }));
         }
+      },
+      onPermissionRequest: (request, _invocation) => {
+        return new Promise<PermissionRequestResult>((resolve) => {
+          setPendingPermission({ request, taskId: undefined, resolve });
+        });
       },
     }, execOptions);
 
@@ -431,6 +457,25 @@ export default function ExecuteScreen({
         );
       })()}
 
+      {/* Permission request prompt */}
+      {pendingPermission && (
+        <PermissionPrompt request={pendingPermission.request} taskId={pendingPermission.taskId} />
+      )}
+
+      {/* Permission decision log */}
+      {permissionLog.length > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          {permissionLog.slice(-3).map((entry, i) => (
+            <Box key={i}>
+              <Text color={entry.approved ? 'green' : 'red'}>
+                {entry.approved ? '✓' : '✗'} Permission {entry.approved ? 'approved' : 'denied'}:
+              </Text>
+              <Text color="gray"> {entry.request.kind}{entry.taskId ? ` (${entry.taskId})` : ''}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
       {/* Retry prompt when there are failures */}
       {started && !executing && failedCount > 0 && (
         <Box marginBottom={1}>
@@ -459,15 +504,17 @@ export default function ExecuteScreen({
       <StatusBar
         screen="Execute"
         hint={
-          executing && failedCount > 0
-            ? '←→: switch batch  ↑↓: select task  r: retry task  ⏳ executing...'
-            : executing
-              ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
-              : started && failedCount > 0
-                ? '←→: switch batch  ↑↓: select task  r: retry  z: summarize  esc: back'
-                : started
-                  ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
-                  : 'x: start  esc: back'
+          pendingPermission
+            ? 'y: approve permission  n: deny permission'
+            : executing && failedCount > 0
+              ? '←→: switch batch  ↑↓: select task  r: retry task  ⏳ executing...'
+              : executing
+                ? '←→: switch batch  ↑↓: select task  ⏳ executing...'
+                : started && failedCount > 0
+                  ? '←→: switch batch  ↑↓: select task  r: retry  z: summarize  esc: back'
+                  : started
+                    ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
+                    : 'x: start  esc: back'
         }
       />
     </Box>

@@ -1,12 +1,12 @@
 import { CopilotClient } from '@github/copilot-sdk';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import type { SessionEvent } from '@github/copilot-sdk';
+import type { SessionEvent, PermissionRequest, PermissionRequestResult, PermissionHandler } from '@github/copilot-sdk';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage, SkillConfig } from '../models/plan.js';
 
-// Re-export SessionEvent for use in other modules
-export type { SessionEvent };
+// Re-export types for use in other modules
+export type { SessionEvent, PermissionRequest, PermissionRequestResult, PermissionHandler };
 
 const SETTINGS_PATH = join(process.cwd(), '.planeteer', 'settings.json');
 const SKILLS_DIR = join(process.cwd(), '.github', 'skills');
@@ -182,6 +182,7 @@ export interface StreamCallbacks {
   onDone: (fullText: string) => void;
   onError: (error: Error) => void;
   onSessionEvent?: (event: SessionEvent) => void;
+  onPermissionRequest?: PermissionHandler;
 }
 
 export async function sendPrompt(
@@ -205,6 +206,7 @@ export async function sendPrompt(
       streaming: boolean;
       skillDirectories?: string[];
       disabledSkills?: string[];
+      onPermissionRequest?: PermissionHandler;
     }
     
     const sessionConfig: SessionConfigWithSkills = {
@@ -218,6 +220,10 @@ export async function sendPrompt(
     
     if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
       sessionConfig.disabledSkills = skillOptions.disabledSkills;
+    }
+
+    if (callbacks.onPermissionRequest) {
+      sessionConfig.onPermissionRequest = callbacks.onPermissionRequest;
     }
     
     session = await copilot.createSession(sessionConfig);
@@ -283,12 +289,14 @@ export async function sendPromptSync(
     timeoutMs?: number;
     onDelta?: (delta: string, fullText: string) => void;
     onSessionEvent?: (event: SessionEvent) => void;
+    onPermissionRequest?: PermissionHandler;
     skillOptions?: SkillOptions;
   },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
   const onSessionEvent = options?.onSessionEvent;
+  const onPermissionRequest = options?.onPermissionRequest;
   const skillOptions = options?.skillOptions;
 
   return new Promise((resolve, reject) => {
@@ -346,6 +354,7 @@ export async function sendPromptSync(
         }
       },
       onSessionEvent,
+      onPermissionRequest,
     }, skillOptions);
   });
 }
