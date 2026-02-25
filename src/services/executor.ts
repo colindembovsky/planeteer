@@ -1,6 +1,6 @@
 import type { Plan, Task } from '../models/plan.js';
 import { sendPromptSync } from './copilot.js';
-import type { SessionEvent } from './copilot.js';
+import type { SessionEvent, PermissionHandler } from './copilot.js';
 import { getReadyTasks } from '../utils/dependency-graph.js';
 
 export interface SessionEventWithTask {
@@ -16,6 +16,7 @@ export interface ExecutionCallbacks {
   onBatchComplete: (batchIndex: number) => void;
   onAllDone: (plan: Plan) => void;
   onSessionEvent?: (eventWithTask: SessionEventWithTask) => void;
+  onPermissionRequest?: PermissionHandler;
 }
 
 function buildTaskPrompt(task: Task, plan: Plan, codebaseContext?: string): string {
@@ -122,6 +123,7 @@ export function executePlan(
         onSessionEvent: (event) => {
           callbacks.onSessionEvent?.({ taskId: task.id, event });
         },
+        onPermissionRequest: callbacks.onPermissionRequest,
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
@@ -193,6 +195,7 @@ export function executePlan(
           onSessionEvent: (event) => {
             callbacks.onSessionEvent?.({ taskId: INIT_TASK_ID, event });
           },
+          onPermissionRequest: callbacks.onPermissionRequest,
         });
         callbacks.onTaskDone(INIT_TASK_ID, initResult);
       } catch (err) {
