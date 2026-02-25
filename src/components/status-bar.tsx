@@ -7,16 +7,18 @@ interface StatusBarProps {
   screen: string;
   hint?: string;
   model?: string;
+  extra?: string;
 }
 
-export default function StatusBar({ screen, hint, model }: StatusBarProps): React.ReactElement {
+export default function StatusBar({ screen, hint, model, extra }: StatusBarProps): React.ReactElement {
   const displayModel = model || getModelLabel();
   const { stdout } = useStdout();
   // Parent App uses padding={1} → 2 cols consumed; border chars │…│ take 2 more
   const innerWidth = (stdout?.columns ?? 80) - 4;
 
-  // Build right-side content: "model  hint  q: quit"
+  // Build right-side content: "model  extra  hint  q: quit"
   const rightParts: string[] = [displayModel];
+  if (extra) rightParts.push(extra);
   if (hint) rightParts.push(hint);
   rightParts.push('q: quit');
   const rightText = rightParts.join('  ');

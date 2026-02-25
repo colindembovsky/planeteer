@@ -41,6 +41,7 @@ export default function RefineScreen({
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [commandMode, setCommandMode] = useState(false);
+  const [compactionMsg, setCompactionMsg] = useState('');
 
   const toggleSkill = useCallback(
     (skillName: string) => {
@@ -164,7 +165,19 @@ export default function RefineScreen({
         .then((skillOptions) => 
           refineWBS(currentPlan.tasks, value, (_delta, fullText) => {
             setStreamText(fullText);
-          }, skillOptions)
+          }, skillOptions, (event) => {
+            if (event.type === 'session.compaction_start') {
+              setCompactionMsg('⟳ Compacting session history…');
+            } else if (event.type === 'session.compaction_complete') {
+              if (event.data.success) {
+                const removed = event.data.messagesRemoved ?? 0;
+                setCompactionMsg(`✓ Session history compacted (${removed} messages removed)`);
+              } else {
+                setCompactionMsg(`⚠ Compaction failed: ${event.data.error ?? 'unknown error'}`);
+              }
+              setTimeout(() => setCompactionMsg(''), 5000);
+            }
+          })
         )
         .then((tasks) => {
           const updated = { ...currentPlan, tasks, updatedAt: new Date().toISOString() };
@@ -300,6 +313,13 @@ export default function RefineScreen({
       )}
 
       {saved && <Text color="green">✓ Plan saved</Text>}
+
+      {/* Compaction notification */}
+      {compactionMsg !== '' && (
+        <Box marginBottom={1}>
+          <Text color="magenta">{compactionMsg}</Text>
+        </Box>
+      )}
 
       <StatusBar
         screen="Refine"

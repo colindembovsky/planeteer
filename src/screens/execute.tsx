@@ -48,6 +48,8 @@ export default function ExecuteScreen({
   const [summarized, setSummarized] = useState('');
   const [sessionEvents, setSessionEvents] = useState<SessionEventWithTask[]>([]);
   const [taskContexts, setTaskContexts] = useState<Record<string, { cwd?: string; repository?: string; branch?: string }>>({});
+  const [tokenUsage, setTokenUsage] = useState<{ tokenLimit: number; currentTokens: number } | null>(null);
+  const [compactionMsg, setCompactionMsg] = useState('');
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -211,6 +213,20 @@ export default function ExecuteScreen({
             ...prev,
             [taskId]: { cwd, repository, branch },
           }));
+        } else if (event.type === 'session.usage_info') {
+          setTokenUsage({ tokenLimit: event.data.tokenLimit, currentTokens: event.data.currentTokens });
+        } else if (event.type === 'session.compaction_start') {
+          setCompactionMsg('⟳ Compacting session history…');
+        } else if (event.type === 'session.compaction_complete') {
+          if (event.data.success) {
+            const removed = event.data.messagesRemoved ?? 0;
+            const pre = event.data.preCompactionTokens ?? 0;
+            const post = event.data.postCompactionTokens ?? 0;
+            setCompactionMsg(`✓ Compacted: ${removed} messages removed (${pre}→${post} tokens)`);
+          } else {
+            setCompactionMsg(`⚠ Compaction failed: ${event.data.error ?? 'unknown error'}`);
+          }
+          setTimeout(() => setCompactionMsg(''), 5000);
         }
       },
     }, execOptions);
@@ -456,6 +472,13 @@ export default function ExecuteScreen({
         </Box>
       )}
 
+      {/* Compaction notification */}
+      {compactionMsg !== '' && (
+        <Box marginBottom={1}>
+          <Text color="magenta">{compactionMsg}</Text>
+        </Box>
+      )}
+
       <StatusBar
         screen="Execute"
         hint={
@@ -469,6 +492,7 @@ export default function ExecuteScreen({
                   ? '←→: switch batch  ↑↓: select task  z: summarize  esc: back'
                   : 'x: start  esc: back'
         }
+        extra={tokenUsage ? `ctx: ${Math.round((tokenUsage.currentTokens / tokenUsage.tokenLimit) * 100)}%` : undefined}
       />
     </Box>
   );
