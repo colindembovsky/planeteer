@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ExecutionCallbacks, SessionEventWithTask } from './executor.js';
+import { mergeEnv } from './executor.js';
 import type { SessionEvent } from './copilot.js';
 
 describe('SessionEventWithTask type', () => {
@@ -112,5 +113,40 @@ describe('ExecutionCallbacks with session events', () => {
       taskId: 'test-task',
       event: mockEvent,
     });
+  });
+});
+
+describe('mergeEnv', () => {
+  it('should return empty object when no env provided', () => {
+    expect(mergeEnv()).toEqual({});
+    expect(mergeEnv(undefined, undefined)).toEqual({});
+  });
+
+  it('should use globalEnv when taskEnv is absent', () => {
+    expect(mergeEnv({ API_URL: 'https://example.com' })).toEqual({
+      API_URL: 'https://example.com',
+    });
+  });
+
+  it('should merge globalEnv and taskEnv with task taking precedence', () => {
+    const result = mergeEnv(
+      { API_URL: 'https://global.example.com', SHARED: 'global' },
+      { API_URL: 'https://task.example.com', TASK_VAR: 'task' },
+    );
+    expect(result).toEqual({
+      API_URL: 'https://task.example.com',
+      SHARED: 'global',
+      TASK_VAR: 'task',
+    });
+  });
+
+  it('should skip env var names with invalid POSIX characters', () => {
+    const result = mergeEnv({ 'invalid name': 'value', VALID_VAR: 'ok' });
+    expect(result).toEqual({ VALID_VAR: 'ok' });
+    expect(result['invalid name']).toBeUndefined();
+  });
+
+  it('should allow leading underscores in env var names', () => {
+    expect(mergeEnv({ _PRIVATE: 'val' })).toEqual({ _PRIVATE: 'val' });
   });
 });
