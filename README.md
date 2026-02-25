@@ -263,6 +263,51 @@ node --inspect-brk -e "
 | `DEBUG=planeteer:*` | Enable debug logging (when implemented) |
 | `NODE_OPTIONS=--inspect` | Attach debugger to running process |
 
+### MCP Environment Variables
+
+Planeteer can pass environment variables to MCP (Model Context Protocol) servers used by Copilot tools during task execution. This is particularly useful for providing API keys, credentials, or configuration values needed by MCP servers.
+
+#### Plan-level (`globalEnv`)
+
+Set environment variables for **all tasks** in a plan by adding a `globalEnv` map to the plan JSON:
+
+```json
+{
+  "id": "my-plan",
+  "name": "My Project",
+  "globalEnv": {
+    "MCP_SERVER_URL": "https://mcp.example.com",
+    "NODE_ENV": "production"
+  },
+  "tasks": []
+}
+```
+
+#### Task-level (`env`)
+
+Override or extend environment variables for a **specific task** using the `env` field. Task-level values take precedence over `globalEnv`:
+
+```json
+{
+  "id": "task-1",
+  "title": "Deploy service",
+  "env": {
+    "DEPLOY_TARGET": "staging",
+    "API_KEY": "sk-..."
+  }
+}
+```
+
+#### How it works
+
+Before each task's Copilot session is created, Planeteer:
+1. Merges `globalEnv` (plan-wide) with the task's `env` (task-specific values win)
+2. Sets the merged variables in `process.env`
+3. Creates the Copilot session (the SDK passes them to MCP servers via `envValueMode: direct`)
+4. Restores the original environment after the session completes
+
+> **Security note**: Environment variable names containing `key`, `token`, `password`, `secret`, `credential`, or `auth` are considered sensitive and will be masked (`***`) in logs and UI displays.
+
 ### Persistence
 
 Plans are saved to `.planeteer/` in the current working directory:

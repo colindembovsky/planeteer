@@ -2,6 +2,7 @@ import type { Plan, Task } from '../models/plan.js';
 import { sendPromptSync } from './copilot.js';
 import type { SessionEvent } from './copilot.js';
 import { getReadyTasks } from '../utils/dependency-graph.js';
+import { isValidEnvName } from '../utils/env-validation.js';
 
 export interface SessionEventWithTask {
   taskId: string;
@@ -77,6 +78,45 @@ export interface ExecutionOptions {
   codebaseContext?: string;
 }
 
+/**
+ * Merge plan-level globalEnv with task-level env (task takes precedence).
+ * Invalid POSIX names are silently skipped.
+ */
+export function mergeEnv(
+  globalEnv?: Record<string, string>,
+  taskEnv?: Record<string, string>,
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const [k, v] of Object.entries(globalEnv ?? {})) {
+    if (isValidEnvName(k)) merged[k] = v;
+  }
+  for (const [k, v] of Object.entries(taskEnv ?? {})) {
+    if (isValidEnvName(k)) merged[k] = v;
+  }
+  return merged;
+}
+
+/** Apply env vars to process.env, returning the saved originals for restoration. */
+function applyEnv(env: Record<string, string>): Record<string, string | undefined> {
+  const saved: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(env)) {
+    saved[k] = process.env[k];
+    process.env[k] = v;
+  }
+  return saved;
+}
+
+/** Restore process.env to its state before applyEnv was called. */
+function restoreEnv(saved: Record<string, string | undefined>): void {
+  for (const [k, v] of Object.entries(saved)) {
+    if (v === undefined) {
+      delete process.env[k];
+    } else {
+      process.env[k] = v;
+    }
+  }
+}
+
 /** Handle returned by executePlan to allow retrying individual tasks mid-flight. */
 export interface ExecutionHandle {
   /** Retry a specific failed task. Safe to call while execution is still in progress. */
@@ -111,6 +151,8 @@ export function executePlan(
     taskInPlan.status = 'in_progress';
     callbacks.onTaskStart(task.id);
 
+    const mergedEnv = mergeEnv(updatedPlan.globalEnv, task.env);
+    const savedEnv = applyEnv(mergedEnv);
     try {
       const prompt = buildTaskPrompt(task, updatedPlan, codebaseContext);
       const result = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
@@ -130,6 +172,8 @@ export function executePlan(
       taskInPlan.status = 'failed';
       taskInPlan.agentResult = err instanceof Error ? err.message : String(err);
       callbacks.onTaskFailed(task.id, taskInPlan.agentResult!);
+    } finally {
+      restoreEnv(savedEnv);
     }
   }
 
@@ -182,6 +226,7 @@ export function executePlan(
     // Bootstrap: create README.md and .gitignore if needed (skip on retry)
     if (!options.skipInit) {
       callbacks.onTaskStart(INIT_TASK_ID);
+      const globalEnvSaved = applyEnv(mergeEnv(updatedPlan.globalEnv));
       try {
         const initPrompt = buildInitPrompt(updatedPlan);
         const initResult = await sendPromptSync(EXECUTOR_SYSTEM_PROMPT, [
@@ -199,6 +244,8 @@ export function executePlan(
         const errMsg = err instanceof Error ? err.message : String(err);
         callbacks.onTaskFailed(INIT_TASK_ID, errMsg);
         // Non-fatal: continue with actual tasks even if init fails
+      } finally {
+        restoreEnv(globalEnvSaved);
       }
     }
 
