@@ -1,4 +1,4 @@
-import { CopilotClient } from '@github/copilot-sdk';
+import { CopilotClient, approveAll } from '@github/copilot-sdk';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import type { SessionEvent } from '@github/copilot-sdk';
 import { join } from 'node:path';
@@ -201,15 +201,19 @@ export async function sendPrompt(
   let session;
   try {
     interface SessionConfigWithSkills {
+      clientName: string;
       model: string;
       streaming: boolean;
+      onPermissionRequest: typeof approveAll;
       skillDirectories?: string[];
       disabledSkills?: string[];
     }
     
     const sessionConfig: SessionConfigWithSkills = {
+      clientName: 'planeteer',
       model: currentModel,
       streaming: true,
+      onPermissionRequest: approveAll,
     };
     
     if (skillOptions?.skillDirectories && skillOptions.skillDirectories.length > 0) {
