@@ -1,9 +1,10 @@
 import { CopilotClient } from '@github/copilot-sdk';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import type { SessionEvent } from '@github/copilot-sdk';
+import type { SessionEvent, SessionConfig } from '@github/copilot-sdk';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ChatMessage, SkillConfig } from '../models/plan.js';
+import { loadToolOverrideConfig, createSessionHooks } from './tool-overrides.js';
 
 // Re-export SessionEvent for use in other modules
 export type { SessionEvent };
@@ -182,6 +183,7 @@ export interface StreamCallbacks {
   onDone: (fullText: string) => void;
   onError: (error: Error) => void;
   onSessionEvent?: (event: SessionEvent) => void;
+  onToolUse?: (toolName: string) => void;
 }
 
 export async function sendPrompt(
@@ -205,6 +207,7 @@ export async function sendPrompt(
       streaming: boolean;
       skillDirectories?: string[];
       disabledSkills?: string[];
+      hooks?: SessionConfig['hooks'];
     }
     
     const sessionConfig: SessionConfigWithSkills = {
@@ -218,6 +221,11 @@ export async function sendPrompt(
     
     if (skillOptions?.disabledSkills && skillOptions.disabledSkills.length > 0) {
       sessionConfig.disabledSkills = skillOptions.disabledSkills;
+    }
+
+    const toolOverrideConfig = await loadToolOverrideConfig();
+    if (toolOverrideConfig.enabled) {
+      sessionConfig.hooks = createSessionHooks(toolOverrideConfig, callbacks.onToolUse);
     }
     
     session = await copilot.createSession(sessionConfig);
@@ -283,12 +291,14 @@ export async function sendPromptSync(
     timeoutMs?: number;
     onDelta?: (delta: string, fullText: string) => void;
     onSessionEvent?: (event: SessionEvent) => void;
+    onToolUse?: (toolName: string) => void;
     skillOptions?: SkillOptions;
   },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
   const onSessionEvent = options?.onSessionEvent;
+  const onToolUse = options?.onToolUse;
   const skillOptions = options?.skillOptions;
 
   return new Promise((resolve, reject) => {
@@ -346,6 +356,7 @@ export async function sendPromptSync(
         }
       },
       onSessionEvent,
+      onToolUse,
     }, skillOptions);
   });
 }

@@ -7,6 +7,8 @@ import { savePlan, summarizePlan } from '../services/persistence.js';
 import { computeBatches } from '../utils/dependency-graph.js';
 import Spinner from '../components/spinner.js';
 import StatusBar from '../components/status-bar.js';
+import type { ToolUsageStats } from '../services/tool-overrides.js';
+import { createEmptyStats } from '../services/tool-overrides.js';
 
 interface ExecuteScreenProps {
   plan: Plan;
@@ -48,6 +50,7 @@ export default function ExecuteScreen({
   const [summarized, setSummarized] = useState('');
   const [sessionEvents, setSessionEvents] = useState<SessionEventWithTask[]>([]);
   const [taskContexts, setTaskContexts] = useState<Record<string, { cwd?: string; repository?: string; branch?: string }>>({});
+  const [toolStats, setToolStats] = useState<Record<string, ToolUsageStats>>({});
 
   const { batches } = computeBatches(plan.tasks);
   // Total display batches: init batch (index 0) + real batches
@@ -213,6 +216,16 @@ export default function ExecuteScreen({
           }));
         }
       },
+      onToolUse: (taskId, toolName) => {
+        setToolStats((prev) => {
+          const current = prev[taskId] ?? createEmptyStats();
+          const updated = { ...current };
+          if (toolName === 'read_file' || toolName === 'view_file') updated.reads++;
+          else if (toolName === 'edit_file' || toolName === 'str_replace_editor' || toolName === 'write_file') updated.edits++;
+          else if (toolName === 'grep') updated.greps++;
+          return { ...prev, [taskId]: updated };
+        });
+      },
     }, execOptions);
 
     execHandleRef.current = handle;
@@ -359,6 +372,19 @@ export default function ExecuteScreen({
                     )}
                   </Box>
                 )}
+                {(() => {
+                  const stats = toolStats[task.id];
+                  if (!stats) return null;
+                  const total = stats.reads + stats.edits + stats.greps;
+                  if (total === 0) return null;
+                  return (
+                    <Box marginLeft={4}>
+                      {stats.reads > 0 && <Text color="blue" dimColor>📖 {stats.reads} </Text>}
+                      {stats.edits > 0 && <Text color="green" dimColor>✏️ {stats.edits} </Text>}
+                      {stats.greps > 0 && <Text color="magenta" dimColor>🔍 {stats.greps}</Text>}
+                    </Box>
+                  );
+                })()}
               </Box>
             );
           })}
