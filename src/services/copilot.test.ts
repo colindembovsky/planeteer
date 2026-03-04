@@ -9,6 +9,16 @@ import {
   loadSkillConfigs,
   getSkillOptions 
 } from './copilot.js';
+import {
+  createSessionHooks,
+  createEmptyStats,
+  DEFAULT_TOOL_OVERRIDE_CONFIG,
+  clearFileCache,
+  clearToolOverrideConfigCache,
+  loadToolOverrideConfig,
+  saveToolOverrideConfig,
+  type ToolOverrideConfig,
+} from './tool-overrides.js';
 
 const TEST_DIR = join(process.cwd(), '.planeteer-test');
 const TEST_SKILLS_DIR = join(TEST_DIR, 'skills');
@@ -124,6 +134,168 @@ describe('Skill Configuration', () => {
       if (skillFiles.length > 0) {
         expect(options.skillDirectories![0]).toBe(skillsDir);
       }
+    });
+  });
+});
+
+describe('Tool Overrides', () => {
+  const cwd = process.cwd();
+
+  beforeEach(() => {
+    clearFileCache();
+    clearToolOverrideConfigCache();
+  });
+
+  describe('createEmptyStats', () => {
+    it('should return zeroed stats', () => {
+      const stats = createEmptyStats();
+      expect(stats).toEqual({ reads: 0, edits: 0, greps: 0 });
+    });
+  });
+
+  describe('DEFAULT_TOOL_OVERRIDE_CONFIG', () => {
+    it('should have overrides enabled by default', () => {
+      expect(DEFAULT_TOOL_OVERRIDE_CONFIG.enabled).toBe(true);
+      expect(DEFAULT_TOOL_OVERRIDE_CONFIG.editFile?.enabled).toBe(true);
+      expect(DEFAULT_TOOL_OVERRIDE_CONFIG.readFile?.enabled).toBe(true);
+      expect(DEFAULT_TOOL_OVERRIDE_CONFIG.grep?.enabled).toBe(true);
+    });
+
+    it('should include common exclude patterns for grep', () => {
+      const patterns = DEFAULT_TOOL_OVERRIDE_CONFIG.grep?.excludePatterns ?? [];
+      expect(patterns).toContain('node_modules');
+      expect(patterns).toContain('.git');
+    });
+
+    it('should default read_file size limit to 100KB', () => {
+      expect(DEFAULT_TOOL_OVERRIDE_CONFIG.readFile?.maxSizeKb).toBe(100);
+    });
+  });
+
+  describe('createSessionHooks — edit_file path validation', () => {
+    it('should deny edit_file for paths outside cwd', async () => {
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'edit_file',
+        toolArgs: { path: '/etc/passwd' },
+      });
+      expect(result?.permissionDecision).toBe('deny');
+      expect(result?.permissionDecisionReason).toMatch(/outside the project workspace/);
+    });
+
+    it('should deny str_replace_editor for paths outside cwd', async () => {
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'str_replace_editor',
+        toolArgs: { path: '/tmp/evil.txt' },
+      });
+      expect(result?.permissionDecision).toBe('deny');
+    });
+
+    it('should allow edit_file for paths within cwd', async () => {
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'edit_file',
+        toolArgs: { path: join(cwd, 'src', 'index.ts') },
+      });
+      expect(result?.permissionDecision).not.toBe('deny');
+    });
+
+    it('should allow edit_file when editFile override is disabled', async () => {
+      const config: ToolOverrideConfig = {
+        ...DEFAULT_TOOL_OVERRIDE_CONFIG,
+        editFile: { enabled: false },
+      };
+      const hooks = createSessionHooks(config);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'edit_file',
+        toolArgs: { path: '/etc/passwd' },
+      });
+      expect(result?.permissionDecision).not.toBe('deny');
+    });
+
+    it('should not interfere when master switch is disabled', async () => {
+      const config: ToolOverrideConfig = { ...DEFAULT_TOOL_OVERRIDE_CONFIG, enabled: false };
+      const hooks = createSessionHooks(config);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'edit_file',
+        toolArgs: { path: '/etc/passwd' },
+      });
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('createSessionHooks — grep exclude patterns', () => {
+    it('should add exclude_dirs to grep args', async () => {
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'grep',
+        toolArgs: { pattern: 'TODO', path: '.' },
+      });
+      const modified = result?.modifiedArgs as Record<string, unknown> | undefined;
+      expect(Array.isArray(modified?.['exclude_dirs'])).toBe(true);
+      expect((modified?.['exclude_dirs'] as string[])).toContain('node_modules');
+      expect((modified?.['exclude_dirs'] as string[])).toContain('.git');
+    });
+
+    it('should provide additional context hint for grep', async () => {
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG);
+      const result = await hooks.onPreToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'grep',
+        toolArgs: { pattern: 'foo' },
+      });
+      expect(result?.additionalContext).toMatch(/--exclude-dir/);
+    });
+  });
+
+  describe('createSessionHooks — onToolUse callback', () => {
+    it('should invoke onToolUse after tool call', () => {
+      const calls: string[] = [];
+      const hooks = createSessionHooks(DEFAULT_TOOL_OVERRIDE_CONFIG, (name) => calls.push(name));
+      hooks.onPostToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'grep',
+        toolArgs: {},
+        toolResult: { resultType: 'success', textResultForLlm: 'results' },
+      });
+      expect(calls).toContain('grep');
+    });
+
+    it('should not invoke onToolUse when master switch is off', () => {
+      const calls: string[] = [];
+      const config: ToolOverrideConfig = { ...DEFAULT_TOOL_OVERRIDE_CONFIG, enabled: false };
+      const hooks = createSessionHooks(config, (name) => calls.push(name));
+      hooks.onPostToolUse?.({
+        timestamp: Date.now(),
+        cwd,
+        toolName: 'grep',
+        toolArgs: {},
+        toolResult: { resultType: 'success', textResultForLlm: 'results' },
+      });
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('loadToolOverrideConfig', () => {
+    it('should return default config when no config file exists', async () => {
+      const config = await loadToolOverrideConfig();
+      expect(config.enabled).toBe(true);
+      expect(config.editFile?.enabled).toBe(true);
     });
   });
 });

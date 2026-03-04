@@ -16,6 +16,7 @@ export interface ExecutionCallbacks {
   onBatchComplete: (batchIndex: number) => void;
   onAllDone: (plan: Plan) => void;
   onSessionEvent?: (eventWithTask: SessionEventWithTask) => void;
+  onToolUse?: (taskId: string, toolName: string) => void;
 }
 
 function buildTaskPrompt(task: Task, plan: Plan, codebaseContext?: string): string {
@@ -122,6 +123,9 @@ export function executePlan(
         onSessionEvent: (event) => {
           callbacks.onSessionEvent?.({ taskId: task.id, event });
         },
+        onToolUse: (toolName) => {
+          callbacks.onToolUse?.(task.id, toolName);
+        },
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;
@@ -192,6 +196,9 @@ export function executePlan(
           },
           onSessionEvent: (event) => {
             callbacks.onSessionEvent?.({ taskId: INIT_TASK_ID, event });
+          },
+          onToolUse: (toolName) => {
+            callbacks.onToolUse?.(INIT_TASK_ID, toolName);
           },
         });
         callbacks.onTaskDone(INIT_TASK_ID, initResult);

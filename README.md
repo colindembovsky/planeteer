@@ -170,6 +170,44 @@ Two example skills are included in the repository to help you get started:
 
 These files are automatically available in `.github/skills/` and can be used as templates for creating your own custom skills.
 
+## Tool Overrides
+
+Planeteer registers custom hooks for the built-in Copilot agent tools (`edit_file`, `read_file`, `grep`) to enforce workspace safety, improve performance, and provide better observability during plan execution.
+
+### What the overrides do
+
+| Tool | Behaviour |
+|------|-----------|
+| `edit_file` / `str_replace_editor` | **Denies** any write to a path outside `process.cwd()` to prevent accidental modification of system files |
+| `read_file` | Warns the agent when a file exceeds the configured size limit (default 100 KB) and caches successfully-read files to avoid redundant I/O |
+| `grep` | Injects `exclude_dirs` (e.g. `node_modules`, `.git`, `dist`) into the tool arguments so searches stay scoped to project files |
+
+### Execute screen stats
+
+While a plan is executing, per-task tool usage is shown inline:
+
+- 📖 **reads** — number of `read_file` calls
+- ✏️  **edits** — number of `edit_file` / `str_replace_editor` calls
+- 🔍 **greps** — number of `grep` calls
+
+### Configuration
+
+Create `.planeteer/config.json` to customise or disable overrides:
+
+```json
+{
+  "enabled": true,
+  "editFile": { "enabled": true },
+  "readFile": { "enabled": true, "maxSizeKb": 100 },
+  "grep": {
+    "enabled": true,
+    "excludePatterns": ["node_modules", ".git", "dist", ".planeteer", "coverage", ".next", "__pycache__"]
+  }
+}
+```
+
+Set `"enabled": false` at the top level to turn off all overrides, or set `"enabled": false` inside an individual section to disable just that override.
+
 ## Development
 
 ### Build & Run
