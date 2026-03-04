@@ -3,13 +3,14 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { Task } from '../models/plan.js';
 
-type EditField = 'title' | 'description' | 'acceptance' | 'dependsOn';
+type EditField = 'title' | 'description' | 'acceptance' | 'dependsOn' | 'model';
 
 const FIELDS: { key: EditField; label: string }[] = [
   { key: 'title', label: 'Title' },
   { key: 'description', label: 'Description' },
   { key: 'acceptance', label: 'Acceptance Criteria' },
   { key: 'dependsOn', label: 'Dependencies' },
+  { key: 'model', label: 'Model' },
 ];
 
 interface TaskEditorProps {
@@ -29,6 +30,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
   const [description, setDescription] = useState(task.description);
   const [acceptanceCriteria, setAcceptanceCriteria] = useState([...task.acceptanceCriteria]);
   const [dependsOn, setDependsOn] = useState([...task.dependsOn]);
+  const [model, setModel] = useState(task.model ?? '');
 
   // For acceptance criteria editing
   const [acIndex, setAcIndex] = useState(0);
@@ -66,6 +68,9 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
       } else if (field === 'dependsOn') {
         setEditValue(dependsOn.join(', '));
         setEditing(true);
+      } else if (field === 'model') {
+        setEditValue(model);
+        setEditing(true);
       }
       return;
     }
@@ -97,6 +102,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
         description,
         acceptanceCriteria: updated,
         dependsOn,
+        model: model || undefined,
       });
     }
   });
@@ -108,6 +114,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
     let newDescription = description;
     let newAcceptanceCriteria = acceptanceCriteria;
     let newDependsOn = dependsOn;
+    let newModel = model;
 
     if (field === 'title') {
       newTitle = value;
@@ -137,6 +144,9 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
         .filter((d) => d && allTaskIds.includes(d) && d !== task.id);
       newDependsOn = deps;
       setDependsOn(deps);
+    } else if (field === 'model') {
+      newModel = value.trim();
+      setModel(newModel);
     }
 
     setEditing(false);
@@ -149,6 +159,7 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
       description: newDescription,
       acceptanceCriteria: newAcceptanceCriteria,
       dependsOn: newDependsOn,
+      model: newModel || undefined,
     });
   };
 
@@ -240,6 +251,23 @@ export default function TaskEditor({ task, allTaskIds, onSave, onCancel }: TaskE
                 <TextInput value={editValue} onChange={setEditValue} onSubmit={handleEditSubmit} />
               ) : (
                 <Text>{dependsOn.length > 0 ? dependsOn.join(', ') : '(none)'}</Text>
+              )}
+            </Box>
+          );
+        }
+
+        if (field.key === 'model') {
+          return (
+            <Box key={field.key}>
+              <Text color={isActive ? 'green' : 'gray'}>{indicator}</Text>
+              <Text color="cyan" bold>{field.label}: </Text>
+              {editing && isActive ? (
+                <TextInput value={editValue} onChange={setEditValue} onSubmit={handleEditSubmit} />
+              ) : (
+                <Text>{model || '(default)'}</Text>
+              )}
+              {isActive && !editing && (
+                <Text color="gray"> (e.g. gpt-5-mini, claude-sonnet-4, gpt-4.1)</Text>
               )}
             </Box>
           );

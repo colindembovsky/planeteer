@@ -8,6 +8,7 @@ export interface Task {
   dependsOn: string[];
   status: TaskStatus;
   agentResult?: string;
+  model?: string;
 }
 
 export interface SkillConfig {

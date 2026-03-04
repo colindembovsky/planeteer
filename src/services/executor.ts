@@ -50,6 +50,16 @@ Output a brief summary of what you implemented and confirm each acceptance crite
 
 const INIT_TASK_ID = 'project-init';
 
+/**
+ * Suggest a model for a task based on complexity heuristics.
+ * Complex tasks (many dependencies or long descriptions) get a more capable model.
+ * Simple tasks get a faster, cheaper model.
+ */
+export function suggestModel(task: Task): string {
+  const isComplex = task.dependsOn.length > 2 || task.description.length > 200 || task.acceptanceCriteria.length > 3;
+  return isComplex ? 'claude-sonnet-4' : 'gpt-5-mini';
+}
+
 function buildInitPrompt(plan: Plan): string {
   const taskSummary = plan.tasks
     .map((t) => `- ${t.id}: ${t.title} — ${t.description}`)
@@ -122,6 +132,7 @@ export function executePlan(
         onSessionEvent: (event) => {
           callbacks.onSessionEvent?.({ taskId: task.id, event });
         },
+        model: task.model,
       });
       taskInPlan.status = 'done';
       taskInPlan.agentResult = result;

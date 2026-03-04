@@ -189,6 +189,7 @@ export async function sendPrompt(
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
   skillOptions?: SkillOptions,
+  model?: string,
 ): Promise<void> {
   let copilot: CopilotClient;
   try {
@@ -208,7 +209,7 @@ export async function sendPrompt(
     }
     
     const sessionConfig: SessionConfigWithSkills = {
-      model: currentModel,
+      model: model ?? currentModel,
       streaming: true,
     };
     
@@ -284,12 +285,14 @@ export async function sendPromptSync(
     onDelta?: (delta: string, fullText: string) => void;
     onSessionEvent?: (event: SessionEvent) => void;
     skillOptions?: SkillOptions;
+    model?: string;
   },
 ): Promise<string> {
   const idleTimeoutMs = options?.timeoutMs ?? 120_000;
   const onDelta = options?.onDelta;
   const onSessionEvent = options?.onSessionEvent;
   const skillOptions = options?.skillOptions;
+  const model = options?.model;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -346,6 +349,6 @@ export async function sendPromptSync(
         }
       },
       onSessionEvent,
-    }, skillOptions);
+    }, skillOptions, model);
   });
 }

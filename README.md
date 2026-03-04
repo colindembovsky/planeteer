@@ -60,6 +60,33 @@ planeteer list
 | `x` | Start execution (refine/execute screen) |
 | `q` | Quit |
 
+## Dynamic Model Selection
+
+Planeteer supports per-task model selection, allowing you to optimize cost and performance during execution.
+
+### Assigning Models to Tasks
+
+In the **Refine** screen, open the task editor (`/e`) and navigate to the **Model** field. Enter a model ID (e.g., `gpt-5-mini`, `claude-sonnet-4`, `gpt-4.1`). Leave blank to use the globally selected model.
+
+### Smart Defaults
+
+Use `suggestModel(task)` from `src/services/executor.ts` to automatically select a model based on task complexity:
+
+| Condition | Suggested Model |
+|-----------|----------------|
+| Many dependencies (>2), long description (>200 chars), or many acceptance criteria (>3) | `claude-sonnet-4` |
+| Simple task | `gpt-5-mini` |
+
+### Model Display
+
+During execution, tasks with a custom model show the model name in **magenta** in the task list.
+
+### Strategy
+
+- **Complex tasks** (architecture decisions, cross-cutting refactors, tasks with many dependencies): use `gpt-4.1` or `claude-sonnet-4`
+- **Simple tasks** (file edits, typo fixes, single-file changes): use `gpt-5-mini` for faster, cheaper execution
+- **Parallel batches**: independent simple tasks benefit most from faster models
+
 ## Custom Copilot Skills
 
 Planeteer supports custom Copilot skills for domain-specific planning. Skills help Copilot generate better work breakdowns by providing context about specific project types.

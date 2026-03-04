@@ -346,6 +346,9 @@ export default function ExecuteScreen({
                     {task.id}
                   </Text>
                   <Text color="gray"> — {task.title}</Text>
+                  {task.model && (
+                    <Text color="magenta" dimColor> [{task.model}]</Text>
+                  )}
                   {task.status === 'in_progress' && (
                     <Text color="yellow"> </Text>
                   )}

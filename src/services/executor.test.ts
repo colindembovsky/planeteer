@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ExecutionCallbacks, SessionEventWithTask } from './executor.js';
+import { suggestModel } from './executor.js';
 import type { SessionEvent } from './copilot.js';
+import { createTask } from '../models/plan.js';
 
 describe('SessionEventWithTask type', () => {
   it('should correctly structure context change events with task ID', () => {
@@ -112,5 +114,80 @@ describe('ExecutionCallbacks with session events', () => {
       taskId: 'test-task',
       event: mockEvent,
     });
+  });
+});
+
+describe('suggestModel', () => {
+  it('should suggest a fast model for simple tasks', () => {
+    const task = createTask({
+      id: 'simple-task',
+      title: 'Add a comment',
+      description: 'Add a one-line comment to the function.',
+      acceptanceCriteria: ['Comment is added'],
+      dependsOn: [],
+    });
+    expect(suggestModel(task)).toBe('gpt-5-mini');
+  });
+
+  it('should suggest a capable model for tasks with many dependencies', () => {
+    const task = createTask({
+      id: 'complex-task',
+      title: 'Implement authentication',
+      description: 'Add auth.',
+      acceptanceCriteria: ['Login works'],
+      dependsOn: ['task-1', 'task-2', 'task-3'],
+    });
+    expect(suggestModel(task)).toBe('claude-sonnet-4');
+  });
+
+  it('should suggest a capable model for tasks with long descriptions', () => {
+    const task = createTask({
+      id: 'long-desc-task',
+      title: 'Complex refactor',
+      description: 'A'.repeat(201),
+      acceptanceCriteria: ['Tests pass'],
+      dependsOn: [],
+    });
+    expect(suggestModel(task)).toBe('claude-sonnet-4');
+  });
+
+  it('should suggest a capable model for tasks with many acceptance criteria', () => {
+    const task = createTask({
+      id: 'many-ac-task',
+      title: 'Build feature',
+      description: 'Short desc.',
+      acceptanceCriteria: ['AC1', 'AC2', 'AC3', 'AC4'],
+      dependsOn: [],
+    });
+    expect(suggestModel(task)).toBe('claude-sonnet-4');
+  });
+
+  it('should return gpt-5-mini for simple task with few deps, short description, and few criteria', () => {
+    const task = createTask({
+      id: 'easy-task',
+      title: 'Fix typo',
+      description: 'Fix typo in README.',
+      acceptanceCriteria: ['Typo fixed', 'README updated'],
+      dependsOn: ['task-a'],
+    });
+    expect(suggestModel(task)).toBe('gpt-5-mini');
+  });
+});
+
+describe('Task model field', () => {
+  it('should allow tasks without a model (optional field)', () => {
+    const task = createTask({ id: 'no-model', title: 'Task without model' });
+    expect(task.model).toBeUndefined();
+  });
+
+  it('should allow tasks with a specific model', () => {
+    const task = createTask({ id: 'with-model', title: 'Task with model', model: 'gpt-5-mini' });
+    expect(task.model).toBe('gpt-5-mini');
+  });
+
+  it('should preserve model through createTask spread', () => {
+    const task = createTask({ id: 'model-task', title: 'Model task', model: 'claude-sonnet-4' });
+    const copy = { ...task };
+    expect(copy.model).toBe('claude-sonnet-4');
   });
 });
